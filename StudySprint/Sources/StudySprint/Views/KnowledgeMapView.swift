@@ -7,52 +7,70 @@ struct KnowledgeMapView: View {
     var onStartSprint: () -> Void
     @State private var selected: Int?
 
-    private let nodeSize = CGSize(width: 190, height: 70)
+    private let nodeSize = CGSize(width: 200, height: 70)
     private let columnGap: CGFloat = 56
-    private let rowGap: CGFloat = 26
+    private let rowGap: CGFloat = 22
+    private let bandGap: CGFloat = 48
     private let margin: CGFloat = 30
 
     private var depths: [Int] { KnowledgeMapLayout.depths(for: guide.steps) }
 
-    /// Center point of every node.
-    private var positions: [CGPoint] {
-        let d = depths
-        var rowInColumn: [Int: Int] = [:]
-        return d.map { depth in
-            let row = rowInColumn[depth, default: 0]
-            rowInColumn[depth] = row + 1
-            return CGPoint(
-                x: margin + CGFloat(depth) * (nodeSize.width + columnGap) + nodeSize.width / 2,
-                y: margin + CGFloat(row) * (nodeSize.height + rowGap) + nodeSize.height / 2
-            )
-        }
+    struct Layout {
+        var points: [CGPoint]
+        var bands: [Int]
+        var size: CGSize
     }
 
-    private var canvasSize: CGSize {
-        let p = positions
-        let maxX = (p.map(\.x).max() ?? 0) + nodeSize.width / 2 + margin
-        let maxY = (p.map(\.y).max() ?? 0) + nodeSize.height / 2 + margin
-        return CGSize(width: maxX, height: maxY)
+    /// Columns by dependency depth; when the chain is wider than the window it wraps
+    /// onto further rows ("bands") instead of shrinking, so text stays readable.
+    private func layout(width: CGFloat) -> Layout {
+        let d = depths
+        guard !d.isEmpty else { return Layout(points: [], bands: [], size: .zero) }
+        let maxDepth = d.max() ?? 0
+        let perRow = max(1, Int((width - 2 * margin + columnGap) / (nodeSize.width + columnGap)))
+        let bandCount = maxDepth / perRow + 1
+
+        var perDepth: [Int: Int] = [:]
+        for depth in d { perDepth[depth, default: 0] += 1 }
+        var rowsInBand = [Int](repeating: 1, count: bandCount)
+        for (depth, count) in perDepth { rowsInBand[depth / perRow] = max(rowsInBand[depth / perRow], count) }
+
+        var bandTop = [CGFloat](repeating: margin, count: bandCount)
+        for b in 1..<max(bandCount, 1) where b < bandCount {
+            bandTop[b] = bandTop[b - 1] + CGFloat(rowsInBand[b - 1]) * (nodeSize.height + rowGap) - rowGap + bandGap
+        }
+
+        var rowInDepth: [Int: Int] = [:]
+        let points = d.map { depth -> CGPoint in
+            let row = rowInDepth[depth, default: 0]
+            rowInDepth[depth] = row + 1
+            let band = depth / perRow, col = depth % perRow
+            return CGPoint(x: margin + CGFloat(col) * (nodeSize.width + columnGap) + nodeSize.width / 2,
+                           y: bandTop[band] + CGFloat(row) * (nodeSize.height + rowGap) + nodeSize.height / 2)
+        }
+        let cols = min(perRow, maxDepth + 1)
+        let size = CGSize(
+            width: 2 * margin + CGFloat(cols) * nodeSize.width + CGFloat(cols - 1) * columnGap,
+            height: bandTop[bandCount - 1] + CGFloat(rowsInBand[bandCount - 1]) * (nodeSize.height + rowGap) - rowGap + margin
+        )
+        return Layout(points: points, bands: d.map { $0 / perRow }, size: size)
     }
 
     var body: some View {
         VStack(spacing: 0) {
             GeometryReader { geo in
-                let pts = positions
-                let size = canvasSize
-                // Shrink to fit the window (but never enlarge past 1:1).
-                let scale = min(1, (geo.size.width - 20) / max(size.width, 1), (geo.size.height - 20) / max(size.height, 1))
-                ZStack(alignment: .topLeading) {
-                    edges(pts)
-                    ForEach(guide.steps.indices, id: \.self) { i in
-                        node(i)
-                            .position(pts[i])
+                let l = layout(width: geo.size.width)
+                ScrollView(.vertical) {
+                    ZStack(alignment: .topLeading) {
+                        edges(l)
+                        ForEach(guide.steps.indices, id: \.self) { i in
+                            node(i)
+                                .position(l.points[i])
+                        }
                     }
+                    .frame(width: l.size.width, height: l.size.height)
+                    .frame(width: geo.size.width, height: max(geo.size.height, l.size.height))
                 }
-                .frame(width: size.width, height: size.height)
-                .scaleEffect(scale)
-                .frame(width: size.width * scale, height: size.height * scale)
-                .frame(width: geo.size.width, height: geo.size.height)
             }
             .background(
                 Canvas { ctx, size in
@@ -81,39 +99,48 @@ struct KnowledgeMapView: View {
         .animation(.easeInOut(duration: 0.2), value: selected)
     }
 
-    private func edges(_ pts: [CGPoint]) -> some View {
-        Canvas { ctx, _ in
-            for (i, step) in guide.steps.enumerated() {
-                for p in step.prerequisites where p - 1 >= 0 && p - 1 < i {
-                    let from = CGPoint(x: pts[p - 1].x + nodeSize.width / 2, y: pts[p - 1].y)
-                    let to = CGPoint(x: pts[i].x - nodeSize.width / 2, y: pts[i].y)
-                    var path = Path()
-                    path.move(to: from)
+    private func edges(_ l: Layout) -> some View {
+        let pts = l.points
+        let chainOnly = guide.steps.allSatisfy { $0.prerequisites.isEmpty }
+        var links: [(Int, Int)] = []
+        for (i, step) in guide.steps.enumerated() {
+            for p in step.prerequisites where p - 1 >= 0 && p - 1 < i { links.append((p - 1, i)) }
+        }
+        if chainOnly && pts.count > 1 { links = (1..<pts.count).map { ($0 - 1, $0) } }
+
+        return Canvas { ctx, _ in
+            for (a, b) in links {
+                let lit = guide.steps[a].status.isComplete
+                let color: Color = lit ? .green.opacity(0.65) : .secondary.opacity(0.4)
+                var path = Path()
+                var head = Path()
+                if l.bands[a] == l.bands[b] && pts[b].x > pts[a].x {
+                    // Same row: right edge → left edge.
+                    let from = CGPoint(x: pts[a].x + nodeSize.width / 2, y: pts[a].y)
+                    let to = CGPoint(x: pts[b].x - nodeSize.width / 2, y: pts[b].y)
                     let dx = (to.x - from.x) * 0.5
+                    path.move(to: from)
                     path.addCurve(to: to, control1: CGPoint(x: from.x + dx, y: from.y), control2: CGPoint(x: to.x - dx, y: to.y))
-                    let lit = guide.steps[p - 1].status.isComplete
-                    ctx.stroke(path, with: .color(lit ? .green.opacity(0.6) : .secondary.opacity(0.35)),
-                               style: StrokeStyle(lineWidth: lit ? 2.5 : 1.5, lineCap: .round))
-                    // Arrowhead
-                    var head = Path()
                     head.move(to: to)
                     head.addLine(to: CGPoint(x: to.x - 8, y: to.y - 4.5))
                     head.addLine(to: CGPoint(x: to.x - 8, y: to.y + 4.5))
-                    head.closeSubpath()
-                    ctx.fill(head, with: .color(lit ? .green.opacity(0.7) : .secondary.opacity(0.5)))
+                } else {
+                    // Wraps to a later row: bottom edge → top edge.
+                    let from = CGPoint(x: pts[a].x, y: pts[a].y + nodeSize.height / 2)
+                    let to = CGPoint(x: pts[b].x, y: pts[b].y - nodeSize.height / 2)
+                    let dy = max(30, (to.y - from.y) * 0.5)
+                    path.move(to: from)
+                    path.addCurve(to: to, control1: CGPoint(x: from.x, y: from.y + dy), control2: CGPoint(x: to.x, y: to.y - dy))
+                    head.move(to: to)
+                    head.addLine(to: CGPoint(x: to.x - 4.5, y: to.y - 8))
+                    head.addLine(to: CGPoint(x: to.x + 4.5, y: to.y - 8))
                 }
-            }
-            // Simple chain when Claude gave no dependencies
-            if guide.steps.allSatisfy({ $0.prerequisites.isEmpty }) && pts.count > 1 {
-                for i in 1..<pts.count {
-                    var path = Path()
-                    path.move(to: CGPoint(x: pts[i - 1].x + nodeSize.width / 2, y: pts[i - 1].y))
-                    path.addLine(to: CGPoint(x: pts[i].x - nodeSize.width / 2, y: pts[i].y))
-                    ctx.stroke(path, with: .color(.secondary.opacity(0.35)), lineWidth: 1.5)
-                }
+                head.closeSubpath()
+                ctx.stroke(path, with: .color(color), style: StrokeStyle(lineWidth: lit ? 2.5 : 1.5, lineCap: .round))
+                ctx.fill(head, with: .color(color))
             }
         }
-        .frame(width: canvasSize.width, height: canvasSize.height)
+        .frame(width: l.size.width, height: l.size.height)
         .allowsHitTesting(false)
     }
 
