@@ -123,22 +123,64 @@ enum Prompts {
         """
     }
 
-    // MARK: Free (local model) guide generation
+    // MARK: Free (local model) guide generation, in passes
 
-    /// Shorter, more explicit instructions for small open models running on the Mac.
-    /// The app finds videos itself from each step's `videoQuery`, so the model never writes URLs.
-    static let localGuideSystem = """
-    You are an expert learning coach. Turn the learner's notes into the FASTEST possible study plan.
+    static let localOutlineSystem = """
+    You are an expert learning coach. Plan the FASTEST way to learn the material in the learner's notes.
 
-    Rules:
-    - Start with the few core ideas that unlock most of the topic (paretoConcepts).
-    - Steps go in dependency order. Each step: a compact explanation with one concrete worked example,     a vivid analogy, 2-4 key points, 2 recall questions, and a "testOut" question that lets someone who     already knows the step skip it (answer = the key points a correct answer contains).
-    - videoQuery: a short YouTube search that would find a great short video for this step     (e.g. "krebs cycle explained simply"). Use "" when reading is faster than watching.
-    - prerequisites: 1-based numbers of earlier steps this step builds on ([] if none).
-    - Step minutes must add up to no more than the time budget. Use 3 to 8 steps.
-    - flashcards: 10-20 short question/answer pairs, one fact each.
-    - Stay faithful to the notes; don't invent facts. Write in the language of the notes.
-    - Output only the JSON object.
+    Make an outline:
+    - topic: a short name. emoji: one emoji for the topic. tldr: 2-3 sentences summarizing everything.
+    - paretoConcepts: the few core ideas that unlock most of the topic.
+    - steps: 3 to 8 steps in dependency order (basics first). Each step:
+      - title: short and specific.
+      - minutes: realistic minutes to learn it. All steps together must fit the time budget.
+      - why: one sentence on why this step comes at this point.
+      - videoQuery: a few words to search YouTube for a short video on this step, \
+    like "krebs cycle explained simply". Words only, never a link.
+      - prerequisites: numbers of earlier steps it builds on (1 = first step), or [].
+    Stay faithful to the notes. Write in the language of the notes. Output only JSON.
+    """
+
+    static func localContext(request: GuideRequest, outline: String) -> String {
+        """
+        Learner: \(request.level.rawValue). Goal: \(request.goal.rawValue).
+
+        <notes>
+        \(request.notes.isEmpty ? "(see the images)" : request.notes)
+        </notes>
+
+        <outline>
+        \(outline)
+        </outline>
+
+
+        """
+    }
+
+    static let localStepSystem = """
+    You are an expert teacher writing one step of a fast study plan. Be concrete and compact.
+    - explanation: teach the step in plain language with ONE concrete worked example (3-8 sentences). \
+    Markdown **bold** for key terms is fine.
+    - analogy: one vivid everyday analogy for the core idea.
+    - keyPoints: the must-remember facts.
+    - activeRecall: questions to answer from memory after studying this step.
+    - testOut: a question that someone who already knows this step could answer in a sentence or two, \
+    and the key points a correct answer must contain.
+    Only cover this step. Stay faithful to the notes. Output only JSON.
+    """
+
+    static func localStepInstruction(number: Int, title: String) -> String {
+        "Write step \(number): \(title)"
+    }
+
+    static let localExtrasSystem = """
+    You are an expert teacher finishing a study plan.
+    - flashcards: short question/answer pairs, one fact each, covering every step.
+    - commonMistakes: misconceptions and traps students fall into.
+    - mnemonics: memory aids, only if genuinely useful (may be empty).
+    - skipList: things that are safe to skip for now, and why.
+    - selfTest: final questions that prove mastery.
+    Stay faithful to the notes. Output only JSON.
     """
 
     // MARK: Quiz / grading

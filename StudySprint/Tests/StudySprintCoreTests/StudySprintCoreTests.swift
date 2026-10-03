@@ -300,6 +300,40 @@ private struct FakeBackend: ChatBackend {
     }
 }
 
+/// Answers each free-mode pass according to the schema it was asked for.
+private struct PassBackend: ChatBackend {
+    var modelName: String { "fake-model" }
+    func chat(system: String, messages: [LocalMessage], schema: JSON?,
+              onText: (@MainActor (String) -> Void)?) async throws -> String {
+        let props = schema?["properties"] as? JSON ?? [:]
+        if props["steps"] != nil {
+            return """
+            {"topic": "Photosynthesis", "emoji": "🌱", "tldr": "Plants make sugar from light.",
+             "paretoConcepts": ["Light reactions make ATP/NADPH", "Calvin cycle fixes CO2"],
+             "steps": [
+               {"title": "Light reactions", "minutes": 10, "why": "first", "videoQuery": "light dependent reactions explained", "prerequisites": []},
+               {"title": "Calvin cycle", "minutes": 10, "why": "second", "videoQuery": "https://www.youtube.com/watch?v=fake", "prerequisites": [1]},
+               {"title": "Big picture", "minutes": 5, "why": "wrap up", "videoQuery": "", "prerequisites": [1, 2]}
+             ]}
+            """
+        }
+        if props["explanation"] != nil {
+            let instruction = messages.last?.content.components(separatedBy: "\n").last ?? ""
+            return """
+            {"explanation": "Explains \(instruction)", "analogy": "a", "keyPoints": ["k1", "k2"],
+             "activeRecall": ["q1", "q2"], "testOut": {"question": "tq", "answer": "ta"}}
+            """
+        }
+        if props["flashcards"] != nil {
+            return """
+            {"flashcards": [{"front": "f", "back": "b"}], "commonMistakes": ["m"], "mnemonics": [],
+             "skipList": ["s"], "selfTest": ["t"]}
+            """
+        }
+        return "{}"
+    }
+}
+
 private struct FakeVideos: VideoFinder {
     func search(_ query: String, limit: Int) async throws -> [YouTubeVideo] {
         [YouTubeVideo(id: "live1", title: "Live stream", channel: "X", duration: "", seconds: 0),
@@ -309,35 +343,44 @@ private struct FakeVideos: VideoFinder {
 }
 
 final class FreeModeTests: XCTestCase {
-    let localReply = """
-    {"topic": "Photosynthesis", "emoji": "🌱", "tldr": "Plants make sugar from light.",
-     "paretoConcepts": ["Light reactions make ATP/NADPH", "Calvin cycle fixes CO2"],
-     "steps": [
-       {"title": "Light reactions", "minutes": 10, "why": "w", "explanation": "e", "analogy": "a",
-        "keyPoints": ["k"], "activeRecall": ["q"], "testOut": {"question": "tq", "answer": "ta"},
-        "prerequisites": [], "videoQuery": "light dependent reactions explained"},
-       {"title": "Calvin cycle", "minutes": 10, "why": "w", "explanation": "e", "analogy": "a",
-        "keyPoints": ["k"], "activeRecall": ["q"], "testOut": {"question": "tq", "answer": "ta"},
-        "prerequisites": [1], "videoQuery": ""}
-     ],
-     "flashcards": [{"front": "f", "back": "b"}], "commonMistakes": [], "skipList": [], "mnemonics": [], "selfTest": []}
-    """
 
     @MainActor
-    func testLocalEngineBuildsGuideWithRealVideos() async throws {
-        let engine = LocalEngine(backend: FakeBackend(reply: localReply), videos: FakeVideos())
+    func testLocalEngineBuildsGuideInPassesWithRealVideos() async throws {
+        let engine = LocalEngine(backend: PassBackend(), videos: FakeVideos())
         var events: [ResearchEvent] = []
         let guide = try await engine.generateGuide(GuideRequest(notes: "photosynthesis notes")) { events.append($0) }
 
         XCTAssertEqual(guide.topic, "Photosynthesis")
         XCTAssertEqual(guide.buildCost, 0)
-        XCTAssertEqual(guide.steps.count, 2)
+        XCTAssertEqual(guide.steps.count, 3)
+        XCTAssertEqual(guide.steps[1].title, "Calvin cycle")
+        XCTAssertEqual(guide.steps[1].explanation, "Explains Write step 2: Calvin cycle")
+        XCTAssertEqual(guide.steps[1].prerequisites, [1])
+        XCTAssertEqual(guide.steps[0].testOut?.question, "tq")
+        XCTAssertEqual(guide.flashcards.count, 1)
+        XCTAssertEqual(guide.selfTest, ["t"])
+
         let video = try XCTUnwrap(guide.steps[0].videos.first)
         XCTAssertEqual(video.youTubeID, "abc123", "skips live streams and very long videos")
         XCTAssertTrue(video.verified)
-        XCTAssertTrue(guide.steps[1].videos.isEmpty, "no query → no video")
         XCTAssertTrue(events.contains(.searching("light dependent reactions explained")))
+        // A URL or an empty query is replaced with a search built from the step title.
+        XCTAssertTrue(events.contains(.searching("Calvin cycle Photosynthesis explained")))
+        XCTAssertTrue(events.contains(.searching("Big picture Photosynthesis explained")))
+        XCTAssertFalse(guide.steps[1].videos.isEmpty)
         XCTAssertFalse(guide.sources.isEmpty)
+    }
+
+    func testVideoQueryFallback() {
+        XCTAssertEqual(LocalEngine.videoQuery("krebs cycle explained", step: "Krebs", topic: "Respiration"), "krebs cycle explained")
+        XCTAssertEqual(LocalEngine.videoQuery("https://youtu.be/x", step: "Krebs", topic: "Respiration"), "Krebs Respiration explained")
+        XCTAssertEqual(LocalEngine.videoQuery("", step: "Respiration basics", topic: "Respiration"), "Respiration basics explained")
+    }
+
+    func testLocalSchemasForceEnoughSteps() throws {
+        let steps = try XCTUnwrap((LocalSchemas.outline["properties"] as? JSON)?["steps"] as? JSON)
+        XCTAssertEqual(steps["minItems"] as? Int, 3)
+        XCTAssertEqual(steps["maxItems"] as? Int, 8)
     }
 
     func testLocalEngineQuiz() async throws {
