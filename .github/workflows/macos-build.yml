@@ -10,6 +10,7 @@ jobs:
     defaults:
       run:
         working-directory: StudySprint
+        shell: bash
     steps:
       - uses: actions/checkout@v4
 
@@ -17,17 +18,25 @@ jobs:
         run: swift --version
 
       - name: Build core library
-        run: swift build --target StudySprintCore 2>&1 | grep -E "error|warning: unre|Compiling|Build" ; exit ${PIPESTATUS[0]}
+        run: |
+          set -o pipefail
+          swift build --target StudySprintCore 2>&1 | grep -vE '^\[[0-9]+/[0-9]+\]'
 
       - name: Unit tests
-        run: swift test --filter StudySprintCoreTests 2>&1 | grep -vE "^\[[0-9]+/[0-9]+\] (Compiling|Write|Emitting)" ; exit ${PIPESTATUS[0]}
+        run: |
+          set -o pipefail
+          swift test --filter StudySprintCoreTests 2>&1 | grep -vE '^\[[0-9]+/[0-9]+\] (Compiling|Write|Emitting)'
 
       - name: Build app (release)
         if: always()
-        run: swift build -c release 2>&1 | grep -E "error:|Build" ; exit ${PIPESTATUS[0]}
+        run: |
+          set -o pipefail
+          swift build -c release 2>&1 | grep -vE '^\[[0-9]+/[0-9]+\]'
 
       - name: Package .app
-        run: ./build-app.sh && cd build && ditto -c -k --keepParent StudySprint.app StudySprint.zip
+        run: |
+          ./build-app.sh
+          cd build && ditto -c -k --keepParent StudySprint.app StudySprint.zip
 
       - uses: actions/upload-artifact@v4
         with:

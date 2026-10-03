@@ -1,0 +1,276 @@
+import AppKit
+import SwiftUI
+import StudySprintCore
+
+enum SidebarItem: Hashable {
+    case newGuide
+    case review
+    case guide(UUID)
+}
+
+enum GuideTab: String, CaseIterable, Identifiable {
+    case plan = "Plan"
+    case map = "Map"
+    case tutor = "Tutor"
+    case quiz = "Quiz"
+    case feynman = "Explain It"
+    case cards = "Cards"
+
+    var id: String { rawValue }
+    var icon: String {
+        switch self {
+        case .plan: return "list.bullet.rectangle"
+        case .map: return "point.3.connected.trianglepath.dotted"
+        case .tutor: return "bubble.left.and.text.bubble.right"
+        case .quiz: return "checkmark.circle"
+        case .feynman: return "person.wave.2"
+        case .cards: return "rectangle.on.rectangle.angled"
+        }
+    }
+}
+
+enum SettingsKey {
+    static let model = "model"
+    static let depth = "defaultDepth"
+}
+
+/// App-wide state: saved guides, study log, navigation, and the in-flight guide build.
+final class AppModel: ObservableObject {
+    @Published var guides: [StudyGuide] = []
+    @Published var log = StudyLog()
+    @Published var selection: SidebarItem? = .newGuide
+    @Published var tab: GuideTab = .plan
+    /// Set by other screens (e.g. the quiz) to start a tutor conversation.
+    @Published var pendingTutorPrompt: String?
+    @Published var hasAPIKey = KeychainStore.loadAPIKey()?.isEmpty == false
+
+    let generation = GenerationController()
+
+    private let directory: URL = {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let dir = base.appendingPathComponent("StudySprint", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }()
+    private var guidesURL: URL { directory.appendingPathComponent("guides.json") }
+    private var logURL: URL { directory.appendingPathComponent("study-log.json") }
+    private var pendingSave: DispatchWorkItem?
+
+    init() {
+        load()
+        generation.app = self
+    }
+
+    // MARK: Clients
+
+    var modelID: String {
+        UserDefaults.standard.string(forKey: SettingsKey.model) ?? ClaudeModel.opus.rawValue
+    }
+
+    var client: AnthropicClient {
+        AnthropicClient(apiKey: KeychainStore.loadAPIKey() ?? "", model: modelID)
+    }
+
+    var services: LearningServices { LearningServices(client: client) }
+
+    func saveAPIKey(_ key: String) -> Bool {
+        let ok = KeychainStore.saveAPIKey(key)
+        hasAPIKey = KeychainStore.loadAPIKey()?.isEmpty == false
+        return ok
+    }
+
+    // MARK: Guides
+
+    func guide(_ id: UUID) -> StudyGuide? { guides.first { $0.id == id } }
+
+    func binding(for id: UUID) -> Binding<StudyGuide>? {
+        guard let current = guide(id) else { return nil }
+        return Binding(
+            get: { [weak self] in self?.guide(id) ?? current },
+            set: { [weak self] in self?.update($0) }
+        )
+    }
+
+    func add(_ guide: StudyGuide) {
+        guides.insert(guide, at: 0)
+        scheduleSave()
+    }
+
+    func update(_ guide: StudyGuide) {
+        guard let i = guides.firstIndex(where: { $0.id == guide.id }) else { return }
+        guides[i] = guide
+        scheduleSave()
+    }
+
+    func delete(_ id: UUID) {
+        if selection == .guide(id) { selection = .newGuide }
+        guides.removeAll { $0.id == id }
+        scheduleSave()
+    }
+
+    func open(_ id: UUID, tab: GuideTab = .plan) {
+        self.tab = tab
+        selection = .guide(id)
+    }
+
+    // MARK: Spaced repetition
+
+    struct DueCard: Identifiable, Hashable {
+        var guideID: UUID
+        var card: Flashcard
+        var id: UUID { card.id }
+    }
+
+    func dueCards(in guideID: UUID? = nil, at date: Date = Date()) -> [DueCard] {
+        guides
+            .filter { guideID == nil || $0.id == guideID }
+            .flatMap { g in g.dueCards(at: date).map { DueCard(guideID: g.id, card: $0) } }
+            .sorted { $0.card.review.due < $1.card.review.due }
+    }
+
+    var dueCount: Int { dueCards().count }
+
+    func card(_ guideID: UUID, _ cardID: UUID) -> Flashcard? {
+        guide(guideID)?.flashcards.first { $0.id == cardID }
+    }
+
+    func grade(guideID: UUID, cardID: UUID, grade: ReviewGrade) {
+        guard var g = guide(guideID), let i = g.flashcards.firstIndex(where: { $0.id == cardID }) else { return }
+        g.flashcards[i].review = Scheduler.schedule(g.flashcards[i].review, grade: grade)
+        update(g)
+        log.record()
+        scheduleSave()
+    }
+
+    var nextDueDate: Date? {
+        guides.flatMap(\.flashcards).map(\.review.due).filter { $0 > Date() }.min()
+    }
+
+    func recordStudy(guideID: UUID, minutes: Double) {
+        guard minutes > 0.2, var g = guide(guideID) else { return }
+        g.minutesStudied += minutes
+        update(g)
+        log.recordStudy()
+        scheduleSave()
+    }
+
+    // MARK: Persistence
+
+    private func load() {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        if let data = try? Data(contentsOf: guidesURL) {
+            guides = (try? decoder.decode([StudyGuide].self, from: data)) ?? []
+        } else if let legacy = try? Data(contentsOf: directory.appendingPathComponent("guides.json.v1")) {
+            guides = (try? decoder.decode([StudyGuide].self, from: legacy)) ?? []
+        }
+        if let data = try? Data(contentsOf: logURL) {
+            log = (try? decoder.decode(StudyLog.self, from: data)) ?? StudyLog()
+        }
+    }
+
+    private func scheduleSave() {
+        pendingSave?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.saveNow() }
+        pendingSave = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
+    }
+
+    func saveNow() {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        if let data = try? encoder.encode(guides) { try? data.write(to: guidesURL, options: .atomic) }
+        if let data = try? encoder.encode(log) { try? data.write(to: logURL, options: .atomic) }
+    }
+
+    func revealDataFolder() {
+        NSWorkspace.shared.activateFileViewerSelecting([guidesURL])
+    }
+}
+
+// MARK: - Guide building (lives outside any view so it survives navigation)
+
+struct ResearchLogItem: Identifiable, Hashable {
+    enum Kind { case phase, search, found, note, fallback }
+    let id = UUID()
+    var kind: Kind
+    var text: String
+    var hits: [SearchHit] = []
+    var date = Date()
+}
+
+final class GenerationController: ObservableObject {
+    @Published private(set) var isRunning = false
+    @Published private(set) var phase = ""
+    @Published private(set) var items: [ResearchLogItem] = []
+    @Published private(set) var sources: [SearchHit] = []
+    @Published private(set) var searches = 0
+    @Published private(set) var characters = 0
+    @Published private(set) var startedAt = Date()
+    @Published var error: String?
+
+    weak var app: AppModel?
+    private var task: Task<Void, Never>?
+
+    var videoCount: Int { sources.filter(\.isVideo).count }
+
+    func start(_ request: GuideRequest) {
+        guard !isRunning, let app else { return }
+        isRunning = true
+        error = nil
+        items = []
+        sources = []
+        searches = 0
+        characters = 0
+        phase = "Starting…"
+        startedAt = Date()
+        let generator = GuideGenerator(client: app.client)
+
+        task = Task { @MainActor [weak self] in
+            do {
+                let guide = try await generator.generate(request) { event in self?.apply(event) }
+                guard let self, let app = self.app else { return }
+                app.add(guide)
+                app.open(guide.id)
+                NSSound(named: "Glass")?.play()
+            } catch is CancellationError {
+                self?.error = nil
+            } catch let urlError as URLError where urlError.code == .cancelled {
+                self?.error = nil
+            } catch {
+                self?.error = error.localizedDescription
+            }
+            self?.isRunning = false
+        }
+    }
+
+    func cancel() {
+        task?.cancel()
+        task = nil
+        isRunning = false
+    }
+
+    @MainActor
+    private func apply(_ event: ResearchEvent) {
+        switch event {
+        case .phase(let p):
+            phase = p
+            items.append(ResearchLogItem(kind: .phase, text: p))
+        case .searching(let q):
+            searches += 1
+            phase = "Searching the web…"
+            items.append(ResearchLogItem(kind: .search, text: q))
+        case .found(let hits):
+            let new = hits.filter { h in !sources.contains { $0.url == h.url } }
+            sources += new
+            items.append(ResearchLogItem(kind: .found, text: "\(hits.count) results", hits: hits))
+        case .note(let n):
+            items.append(ResearchLogItem(kind: .note, text: n))
+        case .fallback(let model):
+            items.append(ResearchLogItem(kind: .fallback, text: "Continuing on \(model)"))
+        case .writing(let count):
+            characters = count
+            phase = "Writing your study sprint…"
+        }
+    }
+}
