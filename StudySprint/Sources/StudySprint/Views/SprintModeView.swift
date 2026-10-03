@@ -16,6 +16,9 @@ struct SprintModeView: View {
     @State private var videoIndex = 0
     @State private var speed = 1.0
     @State private var recallChecked: Set<Int> = []
+    @State private var peeked = false
+
+    private var hideLesson: Bool { (phase == .recall || phase == .testOut) && !peeked }
     @State private var stepsThisSession = 0
     @State private var testedOutThisSession = 0
 
@@ -39,6 +42,24 @@ struct SprintModeView: View {
                     HStack(alignment: .top, spacing: 0) {
                         lesson
                             .frame(minWidth: 380, idealWidth: 460, maxWidth: 520)
+                            .blur(radius: hideLesson ? 9 : 0)
+                            .overlay {
+                                if hideLesson {
+                                    VStack(spacing: 10) {
+                                        Image(systemName: "eye.slash.fill").font(.largeTitle).foregroundStyle(Theme.gradient)
+                                        Text("Lesson hidden").font(.title3.bold())
+                                        Text("Recall works only if you can't see the answer.")
+                                            .foregroundStyle(.secondary)
+                                        Button("Peek (counts as a miss)") {
+                                            peeked = true
+                                        }
+                                        .buttonStyle(.link)
+                                    }
+                                    .padding(24)
+                                    .background(RoundedRectangle(cornerRadius: 16).fill(.regularMaterial))
+                                }
+                            }
+                            .animation(.easeInOut(duration: 0.25), value: hideLesson)
                         Divider()
                         rightPane
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -325,7 +346,7 @@ struct SprintModeView: View {
             Label("Recall check", systemImage: "brain.head.profile")
                 .font(.title2.bold())
                 .foregroundStyle(Theme.gradient)
-            Text("Cover the lesson. Answer each question out loud or in your head, then tick it. Retrieval is what makes it stick.")
+            Text("Answer each question out loud or in your head, then tick it. Pulling it from memory is what makes it stick.")
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             let questions = step?.activeRecall ?? []
@@ -463,6 +484,7 @@ struct SprintModeView: View {
 
     private func resetStep() {
         stepStart = Date()
+        peeked = false
         videoIndex = 0
         speed = currentVideoSpeed
         recallChecked = []

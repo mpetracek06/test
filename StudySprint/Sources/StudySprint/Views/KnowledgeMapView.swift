@@ -44,7 +44,9 @@ struct KnowledgeMapView: View {
         let points = d.map { depth -> CGPoint in
             let row = rowInDepth[depth, default: 0]
             rowInDepth[depth] = row + 1
-            let band = depth / perRow, col = depth % perRow
+            let band = depth / perRow
+            // Snake order: odd rows run right-to-left so each wrap is a short hop down.
+            let col = band % 2 == 0 ? depth % perRow : perRow - 1 - depth % perRow
             return CGPoint(x: margin + CGFloat(col) * (nodeSize.width + columnGap) + nodeSize.width / 2,
                            y: bandTop[band] + CGFloat(row) * (nodeSize.height + rowGap) + nodeSize.height / 2)
         }
@@ -114,7 +116,17 @@ struct KnowledgeMapView: View {
                 let color: Color = lit ? .green.opacity(0.65) : .secondary.opacity(0.4)
                 var path = Path()
                 var head = Path()
-                if l.bands[a] == l.bands[b] && pts[b].x > pts[a].x {
+                if l.bands[a] == l.bands[b] && pts[b].x < pts[a].x {
+                    // Same row, running right-to-left: left edge → right edge.
+                    let from = CGPoint(x: pts[a].x - nodeSize.width / 2, y: pts[a].y)
+                    let to = CGPoint(x: pts[b].x + nodeSize.width / 2, y: pts[b].y)
+                    let dx = (from.x - to.x) * 0.5
+                    path.move(to: from)
+                    path.addCurve(to: to, control1: CGPoint(x: from.x - dx, y: from.y), control2: CGPoint(x: to.x + dx, y: to.y))
+                    head.move(to: to)
+                    head.addLine(to: CGPoint(x: to.x + 8, y: to.y - 4.5))
+                    head.addLine(to: CGPoint(x: to.x + 8, y: to.y + 4.5))
+                } else if l.bands[a] == l.bands[b] && pts[b].x > pts[a].x {
                     // Same row: right edge → left edge.
                     let from = CGPoint(x: pts[a].x + nodeSize.width / 2, y: pts[a].y)
                     let to = CGPoint(x: pts[b].x - nodeSize.width / 2, y: pts[b].y)
