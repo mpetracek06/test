@@ -32,6 +32,21 @@ enum GuideTab: String, CaseIterable, Identifiable {
 enum SettingsKey {
     static let model = "model"
     static let depth = "defaultDepth"
+    static let engine = "engine"
+}
+
+/// Which AI does the work.
+enum EngineKind: String, CaseIterable, Identifiable {
+    case free
+    case claude
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .free: return "Free — runs on your Mac"
+        case .claude: return "Claude — best results (paid API)"
+        }
+    }
 }
 
 /// App-wide state: saved guides, study log, navigation, and the in-flight guide build.
@@ -43,8 +58,12 @@ final class AppModel: ObservableObject {
     /// Set by other screens (e.g. the quiz) to start a tutor conversation.
     @Published var pendingTutorPrompt: String?
     @Published var hasAPIKey = KeychainStore.loadAPIKey()?.isEmpty == false
+    @Published var engineKind: EngineKind {
+        didSet { UserDefaults.standard.set(engineKind.rawValue, forKey: SettingsKey.engine) }
+    }
 
     let generation = GenerationController()
+    let ollama = OllamaManager()
 
     private let directory: URL = {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -62,6 +81,9 @@ final class AppModel: ObservableObject {
     private var isEphemeral = false
 
     init() {
+        // Free unless the person has chosen Claude (or already set up a Claude key).
+        let saved = UserDefaults.standard.string(forKey: SettingsKey.engine).flatMap(EngineKind.init(rawValue:))
+        engineKind = saved ?? (KeychainStore.loadAPIKey()?.isEmpty == false ? .claude : .free)
         generation.app = self
         if let screen = Self.screenshotScreen {
             setUpScreenshot(screen)
@@ -87,7 +109,30 @@ final class AppModel: ObservableObject {
         AnthropicClient(apiKey: KeychainStore.loadAPIKey() ?? "", model: modelID)
     }
 
-    var services: LearningServices { LearningServices(client: client) }
+    /// The engine everything uses: Claude, or the free local model.
+    var engine: StudyEngine {
+        switch engineKind {
+        case .claude: return LearningServices(client: client)
+        case .free: return LocalEngine(backend: ollama.client)
+        }
+    }
+
+    var services: StudyEngine { engine }
+
+    /// Ready to build guides with the current engine.
+    var engineReady: Bool {
+        switch engineKind {
+        case .claude: return hasAPIKey
+        case .free: return ollama.isReady
+        }
+    }
+
+    var engineLabel: String {
+        switch engineKind {
+        case .claude: return ClaudeModel(rawValue: modelID)?.label.components(separatedBy: " — ").first ?? modelID
+        case .free: return "Free · \(ollama.selectedModel) on your Mac"
+        }
+    }
 
     func saveAPIKey(_ key: String) -> Bool {
         let ok = KeychainStore.saveAPIKey(key)
@@ -204,6 +249,7 @@ final class AppModel: ObservableObject {
     private func setUpScreenshot(_ screen: String) {
         isEphemeral = true
         hasAPIKey = true
+        engineKind = screen == "setup" ? .free : .claude
         var g = DemoContent.guide()
         g.steps[0].status = .done
         g.steps[1].status = .testedOut
@@ -236,7 +282,7 @@ final class AppModel: ObservableObject {
         for d in 0..<6 { log.record(review: Date().addingTimeInterval(-86_400 * Double(d))) }
 
         switch screen {
-        case "new": selection = .newGuide
+        case "new", "setup": selection = .newGuide
         case "research":
             selection = .newGuide
             generation.simulateForScreenshot()
@@ -289,11 +335,18 @@ final class GenerationController: ObservableObject {
         characters = 0
         phase = "Starting…"
         startedAt = Date()
-        let generator = GuideGenerator(client: app.client)
+        let engine = app.engine
+        var request = request
+        if engine.isFree {
+            // Local models read images, not PDFs: turn scanned pages into pictures.
+            request.attachments = request.attachments.flatMap { a in
+                a.kind == .pdf ? NotesImporter.pageImages(fromPDF: a.data, name: a.name) : [a]
+            }
+        }
 
         task = Task { @MainActor [weak self] in
             do {
-                let guide = try await generator.generate(request) { event in self?.apply(event) }
+                let guide = try await engine.generateGuide(request) { event in self?.apply(event) }
                 guard let self, let app = self.app else { return }
                 app.add(guide)
                 app.open(guide.id)

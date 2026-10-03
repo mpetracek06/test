@@ -35,6 +35,11 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.education</string>
   <key>NSHighResolutionCapable</key><true/>
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <!-- Free mode talks to Ollama on this Mac over plain http://127.0.0.1 -->
+    <key>NSAllowsLocalNetworking</key><true/>
+  </dict>
 </dict>
 </plist>
 PLIST

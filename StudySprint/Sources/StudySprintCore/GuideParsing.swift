@@ -29,9 +29,11 @@ struct GuidePayload: Decodable {
         var videos: [Video]
         var testOut: TestOut?
         var prerequisites: [Int]
+        /// Free mode: what to search YouTube for (the app finds the video itself).
+        var videoQuery: String
 
         enum CodingKeys: String, CodingKey {
-            case title, minutes, why, explanation, analogy, keyPoints, videos, activeRecall, testOut, prerequisites
+            case title, minutes, why, explanation, analogy, keyPoints, videos, activeRecall, testOut, prerequisites, videoQuery
         }
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -45,6 +47,7 @@ struct GuidePayload: Decodable {
             activeRecall = c.value(.activeRecall, [])
             testOut = c.value(.testOut, nil)
             prerequisites = c.value(.prerequisites, [])
+            videoQuery = c.value(.videoQuery, "")
         }
     }
 
@@ -130,7 +133,11 @@ struct GuidePayload: Decodable {
         return try? JSONDecoder().decode(GuidePayload.self, from: Data(json.utf8))
     }
 
-    static let schema: JSON = {
+    static let schema: JSON = makeSchema(local: false)
+    /// Free mode: no video URLs from the model, just a search query per step.
+    static let localSchema: JSON = makeSchema(local: true)
+
+    static func makeSchema(local: Bool) -> JSON {
         func obj(_ props: [String: Any]) -> JSON {
             ["type": "object", "properties": props, "required": Array(props.keys).sorted(), "additionalProperties": false]
         }
@@ -141,19 +148,25 @@ struct GuidePayload: Decodable {
             "title": str, "url": str, "channel": str, "duration": str, "watchTip": str,
             "startSeconds": int, "endSeconds": int, "playbackSpeed": ["type": "number"] as JSON,
         ])
-        let step = obj([
+        var stepProps: [String: Any] = [
             "title": str, "minutes": int, "why": str, "explanation": str, "analogy": str,
-            "keyPoints": strs, "videos": ["type": "array", "items": video] as JSON, "activeRecall": strs,
+            "keyPoints": strs, "activeRecall": strs,
             "testOut": obj(["question": str, "answer": str]),
             "prerequisites": ["type": "array", "items": int] as JSON,
-        ])
+        ]
+        if local {
+            stepProps["videoQuery"] = str
+        } else {
+            stepProps["videos"] = ["type": "array", "items": video] as JSON
+        }
+        let step = obj(stepProps)
         return obj([
             "topic": str, "emoji": str, "tldr": str, "paretoConcepts": strs,
             "steps": ["type": "array", "items": step] as JSON,
             "flashcards": ["type": "array", "items": obj(["front": str, "back": str])] as JSON,
             "commonMistakes": strs, "skipList": strs, "mnemonics": strs, "selfTest": strs,
         ])
-    }()
+    }
 }
 
 public enum YouTube {

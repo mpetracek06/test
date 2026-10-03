@@ -25,7 +25,7 @@ struct SprintModeView: View {
     // Test out
     @State private var testAnswer = ""
     @State private var grading = false
-    @State private var verdict: LearningServices.TestOutVerdict?
+    @State private var verdict: TestOutVerdict?
     @State private var testError: String?
 
     private var step: StudyStep? { guide.steps.indices.contains(index) ? guide.steps[index] : nil }

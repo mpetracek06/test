@@ -6,13 +6,14 @@ struct NewGuideView: View {
     @EnvironmentObject private var app: AppModel
 
     var body: some View {
-        NewGuideContent(generation: app.generation)
+        NewGuideContent(generation: app.generation, ollama: app.ollama)
     }
 }
 
 private struct NewGuideContent: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject var generation: GenerationController
+    @ObservedObject var ollama: OllamaManager
 
     @AppStorage("draftNotes") private var notes = ""
     @State private var topic = ""
@@ -35,7 +36,7 @@ private struct NewGuideContent: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     header
-                    if !app.hasAPIKey { APIKeyBanner() }
+                    if !app.engineReady { EngineSetupCard(ollama: ollama) }
                     if let error = generation.error {
                         ErrorBanner(message: error) { generation.error = nil }
                     }
@@ -156,6 +157,7 @@ private struct NewGuideContent: View {
                     }
                     .pickerStyle(.segmented).labelsHidden()
                 }
+                if app.engineKind == .claude {
                 GridRow {
                     Text("Research").foregroundStyle(.secondary)
                     HStack {
@@ -167,13 +169,15 @@ private struct NewGuideContent: View {
                         Text(depth.blurb).font(.caption).foregroundStyle(.secondary)
                     }
                 }
+                }
             }
         }
     }
 
     private var buildBar: some View {
         HStack {
-            Text("Tip: ⌘↩ builds. You can keep browsing while it works.")
+            EngineMenu(ollama: ollama)
+            Text("⌘↩ builds · keep browsing while it works")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Spacer()
@@ -187,7 +191,7 @@ private struct NewGuideContent: View {
             .tint(.indigo)
             .controlSize(.large)
             .keyboardShortcut(.return, modifiers: .command)
-            .disabled((notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty) || !app.hasAPIKey)
+            .disabled((notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty) || !app.engineReady)
         }
     }
 
@@ -280,32 +284,6 @@ private struct NewGuideContent: View {
             }
         } catch {
             importError = error.localizedDescription
-        }
-    }
-}
-
-private struct APIKeyBanner: View {
-    @EnvironmentObject private var app: AppModel
-    @State private var key = ""
-
-    var body: some View {
-        Card(title: "Connect Claude", systemImage: "key.fill", tint: .orange) {
-            Text("StudySprint uses your Anthropic API key. It's stored in your macOS Keychain and only sent to api.anthropic.com. Get one at console.anthropic.com.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-            HStack {
-                SecureField("sk-ant-…", text: $key)
-                    .textFieldStyle(.roundedBorder)
-                Button("Save key") { _ = app.saveAPIKey(key) }
-                    .disabled(key.trimmingCharacters(in: .whitespaces).isEmpty)
-                    .keyboardShortcut(.defaultAction)
-            }
-            HStack(spacing: 6) {
-                Text("Just looking?").foregroundStyle(.secondary)
-                Button("Explore a demo sprint →") { app.loadDemo() }
-                    .buttonStyle(.link)
-            }
-            .font(.callout)
         }
     }
 }

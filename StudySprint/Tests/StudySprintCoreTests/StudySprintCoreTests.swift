@@ -287,3 +287,114 @@ final class TutorTests: XCTestCase {
         XCTAssertEqual(messages[0]["content"] as? String, "…")
     }
 }
+
+// MARK: - Free mode
+
+private struct FakeBackend: ChatBackend {
+    var reply: String
+    var modelName: String { "fake-model" }
+    func chat(system: String, messages: [LocalMessage], schema: JSON?,
+              onText: (@MainActor (String) -> Void)?) async throws -> String {
+        if let onText { await onText(reply) }
+        return reply
+    }
+}
+
+private struct FakeVideos: VideoFinder {
+    func search(_ query: String, limit: Int) async throws -> [YouTubeVideo] {
+        [YouTubeVideo(id: "live1", title: "Live stream", channel: "X", duration: "", seconds: 0),
+         YouTubeVideo(id: "abc123", title: "\(query) — explained", channel: "Teacher", duration: "8:30", seconds: 510),
+         YouTubeVideo(id: "long1", title: "3 hour lecture", channel: "Uni", duration: "3:02:00", seconds: 10920)]
+    }
+}
+
+final class FreeModeTests: XCTestCase {
+    let localReply = """
+    {"topic": "Photosynthesis", "emoji": "🌱", "tldr": "Plants make sugar from light.",
+     "paretoConcepts": ["Light reactions make ATP/NADPH", "Calvin cycle fixes CO2"],
+     "steps": [
+       {"title": "Light reactions", "minutes": 10, "why": "w", "explanation": "e", "analogy": "a",
+        "keyPoints": ["k"], "activeRecall": ["q"], "testOut": {"question": "tq", "answer": "ta"},
+        "prerequisites": [], "videoQuery": "light dependent reactions explained"},
+       {"title": "Calvin cycle", "minutes": 10, "why": "w", "explanation": "e", "analogy": "a",
+        "keyPoints": ["k"], "activeRecall": ["q"], "testOut": {"question": "tq", "answer": "ta"},
+        "prerequisites": [1], "videoQuery": ""}
+     ],
+     "flashcards": [{"front": "f", "back": "b"}], "commonMistakes": [], "skipList": [], "mnemonics": [], "selfTest": []}
+    """
+
+    @MainActor
+    func testLocalEngineBuildsGuideWithRealVideos() async throws {
+        let engine = LocalEngine(backend: FakeBackend(reply: localReply), videos: FakeVideos())
+        var events: [ResearchEvent] = []
+        let guide = try await engine.generateGuide(GuideRequest(notes: "photosynthesis notes")) { events.append($0) }
+
+        XCTAssertEqual(guide.topic, "Photosynthesis")
+        XCTAssertEqual(guide.buildCost, 0)
+        XCTAssertEqual(guide.steps.count, 2)
+        let video = try XCTUnwrap(guide.steps[0].videos.first)
+        XCTAssertEqual(video.youTubeID, "abc123", "skips live streams and very long videos")
+        XCTAssertTrue(video.verified)
+        XCTAssertTrue(guide.steps[1].videos.isEmpty, "no query → no video")
+        XCTAssertTrue(events.contains(.searching("light dependent reactions explained")))
+        XCTAssertFalse(guide.sources.isEmpty)
+    }
+
+    func testLocalEngineQuiz() async throws {
+        let reply = """
+        {"questions": [{"question": "Q?", "choices": ["a","b","c","d"], "correctIndex": 2, "explanation": "x", "stepNumber": 1},
+                       {"question": "bad", "choices": ["a"], "correctIndex": 5, "explanation": "", "stepNumber": 1}]}
+        """
+        let engine = LocalEngine(backend: FakeBackend(reply: reply), videos: FakeVideos())
+        let guide = StudyGuide(topic: "T", timeBudgetMinutes: 30, tldr: "", paretoConcepts: [], steps: [],
+                               flashcards: [], commonMistakes: [], skipList: [], selfTest: [], sourceNotes: "")
+        let quiz = try await engine.makeQuiz(for: guide)
+        XCTAssertEqual(quiz.count, 1, "invalid questions are dropped")
+        XCTAssertEqual(quiz[0].correctIndex, 2)
+    }
+
+    func testLocalSchemaAsksForQueriesNotURLs() throws {
+        let steps = try XCTUnwrap((GuidePayload.localSchema["properties"] as? JSON)?["steps"] as? JSON)
+        let props = try XCTUnwrap((steps["items"] as? JSON)?["properties"] as? JSON)
+        XCTAssertNotNil(props["videoQuery"])
+        XCTAssertNil(props["videos"])
+    }
+
+    func testTutorPromptMatchesEngine() {
+        XCTAssertTrue(Prompts.tutorSystem(guideMarkdown: "g", canSearch: false).contains("can't browse"))
+        XCTAssertTrue(Prompts.tutorSystem(guideMarkdown: "g", canSearch: true).contains("use web search"))
+    }
+
+    func testOllamaStreamParsing() {
+        XCTAssertEqual(OllamaClient.parseChunk(#"{"message":{"role":"assistant","content":"Hi"},"done":false}"#),
+                       OllamaClient.Chunk(text: "Hi", done: false, error: nil))
+        XCTAssertEqual(OllamaClient.parseChunk(#"{"done":true}"#)?.done, true)
+        XCTAssertEqual(OllamaClient.parseChunk(#"{"error":"model not found"}"#)?.error, "model not found")
+        XCTAssertNil(OllamaClient.parseChunk("garbage"))
+        XCTAssertEqual(OllamaClient.stripThinking("<think>hmm</think>\n{\"a\":1}"), "{\"a\":1}")
+        XCTAssertEqual(OllamaClient.error(code: 404, body: Data(#"{"error":"model 'x' not found"}"#.utf8), model: "x"),
+                       .modelMissing("x"))
+    }
+
+    func testYouTubeResultsParsing() {
+        let html = #"""
+        <html><script>var ytInitialData = {"contents":{"list":[
+          {"videoRenderer":{"videoId":"vid1","title":{"runs":[{"text":"Krebs cycle "},{"text":"in 5 minutes"}]},
+            "ownerText":{"runs":[{"text":"Bio Prof"}]},"lengthText":{"simpleText":"5:07"}}},
+          {"channelRenderer":{"title":{"simpleText":"skip me"}}},
+          {"videoRenderer":{"videoId":"vid2","title":{"simpleText":"Tricky \"quotes\" {braces}"},
+            "longBylineText":{"runs":[{"text":"Chan"}]},"lengthText":{"simpleText":"1:02:03"}}},
+          {"videoRenderer":{"videoId":"vid1","title":{"simpleText":"duplicate"}}}
+        ]}};</script></html>
+        """#
+        let videos = YouTubeSearch.parse(html: html)
+        XCTAssertEqual(videos.map(\.id), ["vid1", "vid2"])
+        XCTAssertEqual(videos[0].title, "Krebs cycle in 5 minutes")
+        XCTAssertEqual(videos[0].channel, "Bio Prof")
+        XCTAssertEqual(videos[0].seconds, 307)
+        XCTAssertEqual(videos[1].title, "Tricky \"quotes\" {braces}")
+        XCTAssertEqual(videos[1].seconds, 3723)
+        XCTAssertEqual(YouTubeSearch.parse(html: "<html>no data</html>"), [])
+        XCTAssertEqual(YouTubeSearch.pickBest(videos).first?.id, "vid1")
+    }
+}

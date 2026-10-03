@@ -16,6 +16,12 @@ let package = Package(
             dependencies: ["StudySprintCore"],
             path: "Sources/StudySprint"
         ),
+        // End-to-end check of free mode against a real Ollama + YouTube (run in CI).
+        .executableTarget(
+            name: "free-mode-smoke",
+            dependencies: ["StudySprintCore"],
+            path: "Sources/FreeModeSmoke"
+        ),
         .testTarget(
             name: "StudySprintCoreTests",
             dependencies: ["StudySprintCore"],

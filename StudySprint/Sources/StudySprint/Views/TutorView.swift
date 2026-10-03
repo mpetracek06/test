@@ -146,7 +146,7 @@ struct TutorView: View {
         input = ""
         error = nil
         if guide.tutorSystem == nil {
-            guide.tutorSystem = LearningServices.tutorSystem(for: guide)
+            guide.tutorSystem = app.engine.tutorSystem(for: guide)
         }
         let system = guide.tutorSystem ?? ""
         guide.tutorTurns.append(ChatTurn(role: .user, text: text))

@@ -44,6 +44,18 @@ enum NotesImporter {
         return .text(try String(contentsOf: url, encoding: .utf8))
     }
 
+    /// Renders the first pages of a PDF as JPEG images (for models that read images but not PDFs).
+    static func pageImages(fromPDF data: Data, name: String, maxPages: Int = 8) -> [NoteAttachment] {
+        guard let doc = PDFDocument(data: data) else { return [] }
+        return (0..<min(doc.pageCount, maxPages)).compactMap { i in
+            guard let page = doc.page(at: i) else { return nil }
+            let bounds = page.bounds(for: .mediaBox)
+            let scale = 1400 / max(bounds.width, bounds.height)
+            let image = page.thumbnail(of: NSSize(width: bounds.width * scale, height: bounds.height * scale), for: .mediaBox)
+            return attachment(from: image, name: "\(name) p\(i + 1)")
+        }
+    }
+
     /// Downscales to the size Claude actually uses (long edge 1568px) and re-encodes as JPEG.
     static func attachment(from image: NSImage, name: String) -> NoteAttachment? {
         guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }

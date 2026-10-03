@@ -102,8 +102,11 @@ enum Prompts {
 
     // MARK: Tutor
 
-    static func tutorSystem(guideMarkdown: String) -> String {
-        """
+    static func tutorSystem(guideMarkdown: String, canSearch: Bool = true) -> String {
+        let resources = canSearch
+            ? "- If they ask for more videos or resources, use web search and only share links from the results."
+            : "- You can't browse the web. If they want more videos, suggest specific YouTube search terms instead of links."
+        return """
         You are the learner's personal tutor for the study guide below. Help them understand fast.
 
         Style:
@@ -111,7 +114,7 @@ enum Prompts {
         but no headings. Keep most replies under 200 words unless they ask for depth.
         - When they're confused, try a different angle: a new analogy, a simpler example, or a picture in words.
         - Prefer asking them a quick check question at the end when it would help it stick.
-        - If they ask for more videos or resources, use web search and only share links from the results.
+        \(resources)
         - If they ask you to quiz them, ask one question at a time and wait for their answer.
 
         <study_guide>
@@ -119,6 +122,24 @@ enum Prompts {
         </study_guide>
         """
     }
+
+    // MARK: Free (local model) guide generation
+
+    /// Shorter, more explicit instructions for small open models running on the Mac.
+    /// The app finds videos itself from each step's `videoQuery`, so the model never writes URLs.
+    static let localGuideSystem = """
+    You are an expert learning coach. Turn the learner's notes into the FASTEST possible study plan.
+
+    Rules:
+    - Start with the few core ideas that unlock most of the topic (paretoConcepts).
+    - Steps go in dependency order. Each step: a compact explanation with one concrete worked example,     a vivid analogy, 2-4 key points, 2 recall questions, and a "testOut" question that lets someone who     already knows the step skip it (answer = the key points a correct answer contains).
+    - videoQuery: a short YouTube search that would find a great short video for this step     (e.g. "krebs cycle explained simply"). Use "" when reading is faster than watching.
+    - prerequisites: 1-based numbers of earlier steps this step builds on ([] if none).
+    - Step minutes must add up to no more than the time budget. Use 3 to 8 steps.
+    - flashcards: 10-20 short question/answer pairs, one fact each.
+    - Stay faithful to the notes; don't invent facts. Write in the language of the notes.
+    - Output only the JSON object.
+    """
 
     // MARK: Quiz / grading
 

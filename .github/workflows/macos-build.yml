@@ -43,6 +43,29 @@ jobs:
           name: StudySprint-app
           path: StudySprint/build/StudySprint.zip
 
+  # Free mode end to end: real Ollama + a small open model + live YouTube search.
+  free-mode:
+    needs: build
+    runs-on: macos-15
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: StudySprint
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install and start Ollama
+        run: |
+          brew install ollama
+          (ollama serve > /tmp/ollama.log 2>&1 &)
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:11434/api/version && break; sleep 2; done
+          ollama pull gemma3:1b
+      - name: Build a guide, quiz, grade and tutor with the free engine
+        run: swift run -c release free-mode-smoke gemma3:1b
+      - name: Ollama log
+        if: always()
+        run: tail -40 /tmp/ollama.log || true
+
   # Add "[screenshots]" to a commit message to refresh docs/screenshots from the real app.
   screenshots:
     needs: build

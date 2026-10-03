@@ -13,6 +13,16 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
+            Section("AI engine") {
+                Picker("Use", selection: $app.engineKind) {
+                    ForEach(EngineKind.allCases) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.radioGroup)
+                if app.engineKind == .free {
+                    FreeSetupSteps(ollama: app.ollama, showModelPicker: true)
+                }
+            }
+
             Section("Claude API") {
                 HStack {
                     Group {
@@ -43,7 +53,7 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Section("Model") {
+            Section("Claude model") {
                 Picker("Model", selection: $model) {
                     ForEach(ClaudeModel.allCases) { Text($0.label).tag($0.rawValue) }
                 }
@@ -69,7 +79,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 560)
+        .frame(width: 620)
         .padding(.vertical, 8)
     }
 
