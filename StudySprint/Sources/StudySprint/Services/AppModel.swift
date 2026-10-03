@@ -232,6 +232,7 @@ final class GenerationController: ObservableObject {
                 guard let self, let app = self.app else { return }
                 app.add(guide)
                 app.open(guide.id)
+                UserDefaults.standard.removeObject(forKey: "draftNotes")
                 NSSound(named: "Glass")?.play()
             } catch is CancellationError {
                 self?.error = nil
