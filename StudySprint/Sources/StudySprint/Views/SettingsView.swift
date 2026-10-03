@@ -9,6 +9,7 @@ struct SettingsView: View {
     @State private var testing = false
     @AppStorage(SettingsKey.model) private var model = ClaudeModel.opus.rawValue
     @AppStorage(SettingsKey.depth) private var depth = ResearchDepth.balanced.rawValue
+    @AppStorage(ReminderScheduler.enabledKey) private var reminders = true
 
     var body: some View {
         Form {
@@ -49,6 +50,14 @@ struct SettingsView: View {
                 Picker("Default research depth", selection: $depth) {
                     ForEach(ResearchDepth.allCases) { Text("\($0.rawValue) (\($0.blurb))").tag($0.rawValue) }
                 }
+            }
+
+            Section("Reminders") {
+                Toggle("Notify me when flashcards are due", isOn: $reminders)
+                    .onChange(of: reminders) { on in
+                        if on { ReminderScheduler.requestPermission() }
+                        ReminderScheduler.schedule(nextDue: app.nextDueDate, dueNow: app.dueCount)
+                    }
             }
 
             Section("Data") {

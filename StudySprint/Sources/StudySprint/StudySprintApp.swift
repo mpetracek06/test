@@ -19,6 +19,13 @@ struct StudySprintApp: App {
                 .frame(minWidth: 1040, minHeight: 680)
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
                     app.saveNow()
+                    ReminderScheduler.schedule(nextDue: app.nextDueDate, dueNow: app.dueCount)
+                }
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
+                    ReminderScheduler.schedule(nextDue: app.nextDueDate, dueNow: app.dueCount)
+                }
+                .onAppear {
+                    if ReminderScheduler.isEnabled && !app.guides.isEmpty { ReminderScheduler.requestPermission() }
                 }
         }
         .defaultSize(width: 1320, height: 860)
