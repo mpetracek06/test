@@ -88,6 +88,7 @@ struct PlanView: View {
 // MARK: - Step
 
 struct StepCard: View {
+    @EnvironmentObject private var app: AppModel
     @Binding var step: StudyStep
     let number: Int
     var isNext = false
@@ -181,6 +182,15 @@ struct StepCard: View {
                             ForEach(Array(step.activeRecall.enumerated()), id: \.offset) { CheckRow(text: $0.element) }
                         }
                     }
+
+                    HStack(spacing: 8) {
+                        Text("Stuck?").font(.caption).foregroundStyle(.secondary)
+                        ForEach(askOptions, id: \.label) { option in
+                            Button(option.label) { ask(option.prompt) }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                        }
+                    }
                 }
                 .transition(.opacity)
             }
@@ -193,6 +203,25 @@ struct StepCard: View {
                               lineWidth: isNext ? 2 : 1)
         )
         .opacity(step.status.isComplete && !isExpanded ? 0.72 : 1)
+    }
+}
+
+extension StepCard {
+    struct AskOption { let label: String; let prompt: String }
+
+    var askOptions: [AskOption] {
+        let t = "step \(number), “\(step.title)”"
+        return [
+            AskOption(label: "Explain simpler", prompt: "Explain \(t) more simply, like I'm 12. One analogy, one tiny example."),
+            AskOption(label: "Another example", prompt: "Give me a different worked example for \(t), step by step."),
+            AskOption(label: "Why does it matter?", prompt: "Why does \(t) matter? Connect it to the big picture and to a real-world case."),
+            AskOption(label: "Quiz me", prompt: "Quiz me on \(t): one question at a time, wait for my answer, then tell me if I'm right."),
+        ]
+    }
+
+    func ask(_ prompt: String) {
+        app.pendingTutorPrompt = prompt
+        app.tab = .tutor
     }
 }
 
