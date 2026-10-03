@@ -244,3 +244,26 @@ final class ModelTests: XCTestCase {
         XCTAssertTrue(md.contains("Watch 1:30–7:45 at 1.5x."), md)
     }
 }
+
+final class RequestAndCostTests: XCTestCase {
+    func testAttachmentsComeBeforeText() {
+        var r = GuideRequest(notes: "")
+        r.attachments = [NoteAttachment(kind: .image, name: "page1.jpg", mediaType: "image/jpeg", data: Data([1, 2, 3])),
+                         NoteAttachment(kind: .pdf, name: "scan.pdf", mediaType: "application/pdf", data: Data([4]))]
+        let blocks = Prompts.guideUserContent(r)
+        XCTAssertEqual(blocks.map { $0["type"] as? String }, ["image", "document", "text"])
+        XCTAssertEqual((blocks[0]["source"] as? JSON)?["data"] as? String, "AQID")
+        XCTAssertTrue((blocks[2]["text"] as? String)?.contains("(see attached images)") == true)
+        XCTAssertFalse(r.isEmpty)
+        XCTAssertTrue(GuideRequest(notes: "  \n").isEmpty)
+    }
+
+    func testCostEstimate() {
+        let usage: JSON = ["input_tokens": 100_000, "output_tokens": 10_000, "cache_read_input_tokens": 0,
+                           "server_tool_use": ["web_search_requests": 5]]
+        // 0.1M * $4 + 0.01M * $20 + 5 * $0.01 = 0.40 + 0.20 + 0.05
+        XCTAssertEqual(CostEstimator.dollars(model: "claude-opus-5-5", usage: usage), 0.65, accuracy: 0.0001)
+        XCTAssertEqual(CostEstimator.format(0.651), "$0.65")
+        XCTAssertEqual(CostEstimator.format(0.001), "<$0.01")
+    }
+}

@@ -23,6 +23,7 @@ private struct NewGuideContent: View {
     @State private var showImporter = false
     @State private var isDropTarget = false
     @State private var importError: String?
+    @State private var attachments: [NoteAttachment] = []
 
     private var depth: ResearchDepth { ResearchDepth(rawValue: depthRaw) ?? .balanced }
     private var wordCount: Int { notes.split(whereSeparator: \.isWhitespace).count }
@@ -42,6 +43,7 @@ private struct NewGuideContent: View {
                         ErrorBanner(message: importError) { self.importError = nil }
                     }
                     notesEditor
+                    if !attachments.isEmpty { attachmentStrip }
                     options
                     buildBar
                 }
@@ -78,7 +80,7 @@ private struct NewGuideContent: View {
                 if notes.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Paste lecture notes, a syllabus, a textbook chapter, or just a topic…")
-                        Text("…or drop a PDF, Word, Markdown, or text file here.")
+                        Text("…or drop PDFs, Word docs, or photos of handwritten notes here.")
                     }
                     .foregroundStyle(.tertiary)
                     .padding(16)
@@ -92,12 +94,16 @@ private struct NewGuideContent: View {
                     .strokeBorder(isDropTarget ? AnyShapeStyle(Theme.gradient) : AnyShapeStyle(Color.primary.opacity(0.12)),
                                   lineWidth: isDropTarget ? 3 : 1)
             )
-            .onDrop(of: [.fileURL], isTargeted: $isDropTarget, perform: handleDrop)
+            .onDrop(of: [.fileURL, .image], isTargeted: $isDropTarget, perform: handleDrop)
 
             HStack(spacing: 12) {
                 Button { showImporter = true } label: {
                     Label("Import files…", systemImage: "doc.badge.plus")
                 }
+                Button(action: pasteImage) {
+                    Label("Paste image", systemImage: "photo.on.rectangle")
+                }
+                .help("Paste a screenshot or photo of your notes from the clipboard")
                 Menu {
                     ForEach(SampleNotes.all, id: \.title) { sample in
                         Button(sample.title) {
@@ -181,32 +187,97 @@ private struct NewGuideContent: View {
             .tint(.indigo)
             .controlSize(.large)
             .keyboardShortcut(.return, modifiers: .command)
-            .disabled(notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !app.hasAPIKey)
+            .disabled((notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty) || !app.hasAPIKey)
         }
     }
 
     private func build() {
-        let request = GuideRequest(notes: notes, topicHint: topic, budget: budget, level: level, goal: goal, depth: depth)
+        var request = GuideRequest(notes: notes, topicHint: topic, budget: budget, level: level, goal: goal, depth: depth)
+        request.attachments = attachments
         generation.start(request)
         topic = ""
+        attachments = []
     }
 
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
         for provider in providers {
-            _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                guard let url else { return }
-                DispatchQueue.main.async { importFile(url) }
+            if provider.canLoadObject(ofClass: URL.self) {
+                _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                    guard let url else { return }
+                    DispatchQueue.main.async { importFile(url) }
+                }
+            } else if provider.canLoadObject(ofClass: NSImage.self) {
+                _ = provider.loadObject(ofClass: NSImage.self) { object, _ in
+                    guard let image = object as? NSImage else { return }
+                    DispatchQueue.main.async { addImage(image, name: "Dropped image") }
+                }
             }
         }
         return !providers.isEmpty
+    }
+
+    private func pasteImage() {
+        guard let image = NSImage(pasteboard: .general) else {
+            importError = "There's no image on the clipboard. Copy a photo or screenshot of your notes first."
+            return
+        }
+        addImage(image, name: "Pasted image \(attachments.count + 1)")
+    }
+
+    private func addImage(_ image: NSImage, name: String) {
+        if let a = NotesImporter.attachment(from: image, name: name) {
+            withAnimation { attachments.append(a) }
+        } else {
+            importError = "Couldn't read that image."
+        }
+    }
+
+    private var attachmentStrip: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Claude will read these directly — handwriting and diagrams included.")
+                .font(.caption).foregroundStyle(.secondary)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(attachments) { a in
+                        ZStack(alignment: .topTrailing) {
+                            VStack(spacing: 4) {
+                                Group {
+                                    if a.kind == .image, let img = NSImage(data: a.data) {
+                                        Image(nsImage: img).resizable().scaledToFill()
+                                    } else {
+                                        Image(systemName: "doc.richtext").font(.system(size: 30)).foregroundStyle(.secondary)
+                                    }
+                                }
+                                .frame(width: 96, height: 72)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                                .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.05)))
+                                Text(a.name).font(.caption2).lineLimit(1).frame(width: 96)
+                            }
+                            Button {
+                                withAnimation { attachments.removeAll { $0.id == a.id } }
+                            } label: {
+                                Image(systemName: "xmark.circle.fill").foregroundStyle(.white, .black.opacity(0.6))
+                            }
+                            .buttonStyle(.plain)
+                            .offset(x: 6, y: -6)
+                        }
+                    }
+                }
+                .padding(.vertical, 6)
+            }
+        }
     }
 
     private func importFile(_ url: URL) {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         do {
-            let text = try NotesImporter.text(from: url)
-            notes += (notes.isEmpty ? "" : "\n\n") + "# \(url.lastPathComponent)\n" + text
+            switch try NotesImporter.load(from: url) {
+            case .text(let text):
+                notes += (notes.isEmpty ? "" : "\n\n") + "# \(url.lastPathComponent)\n" + text
+            case .attachment(let a):
+                withAnimation { attachments.append(a) }
+            }
         } catch {
             importError = error.localizedDescription
         }

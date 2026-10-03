@@ -64,8 +64,32 @@ public enum ResearchDepth: String, CaseIterable, Identifiable, Codable, Sendable
     }
 }
 
+/// A photo of handwritten notes or a scanned PDF, sent to Claude as-is (Claude reads images and PDFs).
+public struct NoteAttachment: Sendable, Hashable, Identifiable {
+    public enum Kind: String, Sendable { case image, pdf }
+    public var id = UUID()
+    public var kind: Kind
+    public var name: String
+    public var mediaType: String
+    public var data: Data
+
+    public init(kind: Kind, name: String, mediaType: String, data: Data) {
+        self.kind = kind
+        self.name = name
+        self.mediaType = mediaType
+        self.data = data
+    }
+
+    /// The Messages API content block for this attachment.
+    public var contentBlock: JSON {
+        let source: JSON = ["type": "base64", "media_type": mediaType, "data": data.base64EncodedString()]
+        return ["type": kind == .image ? "image" : "document", "source": source]
+    }
+}
+
 public struct GuideRequest: Sendable {
     public var notes: String
+    public var attachments: [NoteAttachment] = []
     public var topicHint: String
     public var budget: TimeBudget
     public var level: StartingLevel
@@ -80,6 +104,10 @@ public struct GuideRequest: Sendable {
         self.level = level
         self.goal = goal
         self.depth = depth
+    }
+
+    public var isEmpty: Bool {
+        notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty
     }
 }
 
@@ -275,6 +303,8 @@ public struct StudyGuide: Codable, Hashable, Identifiable, Sendable {
     public var quizAttempts: [QuizAttempt] = []
     public var feynmanResults: [FeynmanResult] = []
     public var minutesStudied: Double = 0
+    /// Approximate API cost of building this guide, in US dollars.
+    public var buildCost: Double?
 
     public init(topic: String, emoji: String = "📘", timeBudgetMinutes: Int, tldr: String,
                 paretoConcepts: [String], steps: [StudyStep], flashcards: [Flashcard],
@@ -390,7 +420,7 @@ extension StudyGuide {
     enum CodingKeys: String, CodingKey {
         case id, createdAt, topic, emoji, timeBudgetMinutes, tldr, paretoConcepts, steps, flashcards,
              commonMistakes, skipList, mnemonics, selfTest, sourceNotes, sources, tutorTurns, tutorSystem,
-             quizAttempts, feynmanResults, minutesStudied
+             quizAttempts, feynmanResults, minutesStudied, buildCost
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -408,5 +438,6 @@ extension StudyGuide {
         quizAttempts = c.value(.quizAttempts, [])
         feynmanResults = c.value(.feynmanResults, [])
         minutesStudied = c.value(.minutesStudied, 0)
+        buildCost = c.value(.buildCost, nil)
     }
 }

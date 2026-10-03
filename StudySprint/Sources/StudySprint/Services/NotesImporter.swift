@@ -1,32 +1,73 @@
 import AppKit
 import PDFKit
 import UniformTypeIdentifiers
+import StudySprintCore
 
-/// Pulls plain text out of the kinds of files people keep notes in.
+/// Pulls notes out of files: text where possible; photos and scanned PDFs are attached for Claude to read.
 enum NotesImporter {
+    enum Imported {
+        case text(String)
+        case attachment(NoteAttachment)
+    }
+
     static let supportedTypes: [UTType] = [
-        .plainText, .text, .pdf, .rtf, .rtfd, .html,
+        .plainText, .text, .pdf, .rtf, .rtfd, .html, .image, .jpeg, .png, .heic,
         UTType(filenameExtension: "md") ?? .plainText,
         UTType(filenameExtension: "docx") ?? .data,
     ]
 
-    static func text(from url: URL) throws -> String {
+    static let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "heic", "heif", "gif", "tiff", "tif", "webp", "bmp"]
+    private static let maxPDFBytes = 20 * 1024 * 1024
+
+    static func load(from url: URL) throws -> Imported {
         let ext = url.pathExtension.lowercased()
+        if imageExtensions.contains(ext) {
+            guard let image = NSImage(contentsOf: url), let attachment = attachment(from: image, name: url.lastPathComponent) else {
+                throw ImportError.unreadable(url.lastPathComponent)
+            }
+            return .attachment(attachment)
+        }
         if ext == "pdf" {
             guard let doc = PDFDocument(url: url) else { throw ImportError.unreadable(url.lastPathComponent) }
-            return doc.string ?? ""
+            let text = doc.string ?? ""
+            let perPage = text.count / max(doc.pageCount, 1)
+            // Little or no selectable text means a scan or handwriting: let Claude read the pages directly.
+            if perPage < 150, let data = try? Data(contentsOf: url), data.count <= maxPDFBytes {
+                return .attachment(NoteAttachment(kind: .pdf, name: url.lastPathComponent,
+                                                  mediaType: "application/pdf", data: data))
+            }
+            return .text(text)
         }
         if ["rtf", "rtfd", "docx", "doc", "html", "htm", "odt"].contains(ext) {
-            return try NSAttributedString(url: url, options: [:], documentAttributes: nil).string
+            return .text(try NSAttributedString(url: url, options: [:], documentAttributes: nil).string)
         }
-        return try String(contentsOf: url, encoding: .utf8)
+        return .text(try String(contentsOf: url, encoding: .utf8))
+    }
+
+    /// Downscales to the size Claude actually uses (long edge 1568px) and re-encodes as JPEG.
+    static func attachment(from image: NSImage, name: String) -> NoteAttachment? {
+        guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+        let longEdge = CGFloat(max(cg.width, cg.height))
+        let scale = min(1, 1568 / longEdge)
+        let w = Int(CGFloat(cg.width) * scale), h = Int(CGFloat(cg.height) * scale)
+        guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return nil }
+        ctx.setFillColor(.white)
+        ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
+        ctx.interpolationQuality = .high
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+        guard let scaled = ctx.makeImage(),
+              let data = NSBitmapImageRep(cgImage: scaled).representation(using: .jpeg, properties: [.compressionFactor: 0.85])
+        else { return nil }
+        return NoteAttachment(kind: .image, name: name, mediaType: "image/jpeg", data: data)
     }
 
     enum ImportError: LocalizedError {
         case unreadable(String)
         var errorDescription: String? {
             switch self {
-            case .unreadable(let name): return "Couldn't read text from \(name)."
+            case .unreadable(let name): return "Couldn't read \(name)."
             }
         }
     }

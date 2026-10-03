@@ -110,7 +110,8 @@ struct GuidePayload: Decodable {
             skipList: skipList,
             mnemonics: mnemonics,
             selfTest: selfTest,
-            sourceNotes: request.notes,
+            sourceNotes: request.attachments.isEmpty ? request.notes
+                : request.notes + "\n\n[\(request.attachments.count) attached: \(request.attachments.map(\.name).joined(separator: ", "))]",
             sources: uniqueHits
         )
     }

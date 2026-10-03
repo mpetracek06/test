@@ -23,7 +23,8 @@ public struct GuideGenerator {
         _ request: GuideRequest,
         onEvent: @escaping @MainActor (ResearchEvent) -> Void
     ) async throws -> StudyGuide {
-        var messages: [JSON] = [["role": "user", "content": Prompts.guideUser(request)]]
+        var messages: [JSON] = [["role": "user", "content": Prompts.guideUserContent(request)]]
+        var cost = CostEstimator.Tally(model: client.model)
         var answer = ""
         var hits: [SearchHit] = []
         let counter = Counter()
@@ -46,6 +47,8 @@ public struct GuideGenerator {
                     "max_uses": request.depth.maxSearches,
                 ] as JSON],
                 "messages": messages,
+                // Caches the prompt so a paused research turn resumes cheaply.
+                "cache_control": ["type": "ephemeral"],
             ]
 
             let message = try await client.stream(
@@ -72,6 +75,7 @@ public struct GuideGenerator {
                 }
             }
 
+            cost.add(message)
             try message.throwIfRefused()
             hits += message.searchHits
             answer += message.text
@@ -85,7 +89,9 @@ public struct GuideGenerator {
 
         await onEvent(.phase("Assembling your sprint…"))
         if let payload = GuidePayload.decode(from: answer) {
-            return payload.toGuide(request: request, searchHits: hits)
+            var guide = payload.toGuide(request: request, searchHits: hits)
+            guide.buildCost = cost.dollars
+            return guide
         }
 
         // Rare: the answer didn't contain clean JSON. Reformat it with structured outputs.
@@ -102,11 +108,14 @@ public struct GuideGenerator {
             ]],
         ]
         let repaired = try await client.stream(repairBody) { _ in }
+        cost.add(repaired)
         try repaired.throwIfRefused()
         guard let data = repaired.text.data(using: .utf8),
               let payload = try? JSONDecoder().decode(GuidePayload.self, from: data) else {
             throw APIError.unparseable
         }
-        return payload.toGuide(request: request, searchHits: hits)
+        var guide = payload.toGuide(request: request, searchHits: hits)
+        guide.buildCost = cost.dollars
+        return guide
     }
 }

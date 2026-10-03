@@ -74,6 +74,17 @@ enum Prompts {
     "prerequisites" lists the 1-based numbers of earlier steps that this step builds on ([] for none).
     """
 
+    /// User turn: any photos / scanned PDFs first, then the instructions and typed notes.
+    static func guideUserContent(_ r: GuideRequest) -> [JSON] {
+        var blocks = r.attachments.map(\.contentBlock)
+        var text = guideUser(r)
+        if !r.attachments.isEmpty {
+            text += "\n\nI've also attached \(r.attachments.count) photo(s)/scan(s) of my notes above. Read them carefully (including handwriting and diagrams) and treat them as part of my notes."
+        }
+        blocks.append(["type": "text", "text": text])
+        return blocks
+    }
+
     static func guideUser(_ r: GuideRequest) -> String {
         let topicLine = r.topicHint.isEmpty ? "" : "Topic: \(r.topicHint)\n"
         return """
@@ -84,7 +95,7 @@ enum Prompts {
         Build me the fastest possible study sprint for the material in my notes. Aim for 12–30 flashcards.
 
         <notes>
-        \(r.notes)
+        \(r.notes.isEmpty ? "(see attached images)" : r.notes)
         </notes>
         """
     }

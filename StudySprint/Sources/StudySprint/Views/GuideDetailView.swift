@@ -88,6 +88,10 @@ struct GuideDetailView: View {
                     if due > 0 {
                         Pill(text: "\(due) cards due", systemImage: "rectangle.stack", tint: .orange)
                     }
+                    if let cost = guide.buildCost, cost > 0 {
+                        Pill(text: "≈ \(CostEstimator.format(cost))", systemImage: "dollarsign.circle", tint: .secondary)
+                            .help("Approximate API cost to build this guide")
+                    }
                     if guide.minutesStudied >= 1 {
                         Pill(text: "\(Int(guide.minutesStudied)) min studied", systemImage: "flame", tint: .pink)
                     }
