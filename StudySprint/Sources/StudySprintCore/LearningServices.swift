@@ -23,18 +23,7 @@ public struct LearningServices {
         onText: @escaping @MainActor (String) -> Void,
         onStatus: @escaping @MainActor (String) -> Void = { _ in }
     ) async throws -> ChatTurn {
-        let messages: [JSON] = history.map { turn in
-            switch turn.role {
-            case .user:
-                return ["role": "user", "content": turn.text]
-            case .assistant:
-                if let raw = turn.rawContent,
-                   let blocks = (try? JSONSerialization.jsonObject(with: raw)) as? [JSON], !blocks.isEmpty {
-                    return ["role": "assistant", "content": blocks]
-                }
-                return ["role": "assistant", "content": turn.text.isEmpty ? "…" : turn.text]
-            }
-        }
+        let messages = Self.tutorMessages(history)
 
         let body: JSON = [
             "max_tokens": 8000,
@@ -59,6 +48,22 @@ public struct LearningServices {
         }
         try message.throwIfRefused()
         return ChatTurn(role: .assistant, text: message.text, rawContent: message.echoData)
+    }
+
+    /// Converts saved turns to API messages, replaying assistant turns with their exact original blocks.
+    static func tutorMessages(_ history: [ChatTurn]) -> [JSON] {
+        history.map { turn -> JSON in
+            switch turn.role {
+            case .user:
+                return ["role": "user", "content": turn.text]
+            case .assistant:
+                if let raw = turn.rawContent,
+                   let blocks = (try? JSONSerialization.jsonObject(with: raw)) as? [JSON], !blocks.isEmpty {
+                    return ["role": "assistant", "content": blocks]
+                }
+                return ["role": "assistant", "content": turn.text.isEmpty ? "…" : turn.text]
+            }
+        }
     }
 
     // MARK: - Quiz

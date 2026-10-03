@@ -267,3 +267,23 @@ final class RequestAndCostTests: XCTestCase {
         XCTAssertEqual(CostEstimator.format(0.001), "<$0.01")
     }
 }
+
+final class TutorTests: XCTestCase {
+    func testAssistantTurnsReplayExactBlocks() throws {
+        let blocks: [JSON] = [["type": "thinking", "thinking": "", "signature": "sig"], ["type": "text", "text": "Hi"]]
+        let raw = try JSONSerialization.data(withJSONObject: blocks)
+        let history = [ChatTurn(role: .user, text: "Q1"),
+                       ChatTurn(role: .assistant, text: "Hi", rawContent: raw),
+                       ChatTurn(role: .user, text: "Q2")]
+        let messages = LearningServices.tutorMessages(history)
+        XCTAssertEqual(messages.map { $0["role"] as? String }, ["user", "assistant", "user"])
+        let replayed = try XCTUnwrap(messages[1]["content"] as? [JSON])
+        XCTAssertEqual(replayed.first?["signature"] as? String, "sig")
+        XCTAssertEqual(messages[2]["content"] as? String, "Q2")
+    }
+
+    func testAssistantTurnWithoutBlocksFallsBackToText() {
+        let messages = LearningServices.tutorMessages([ChatTurn(role: .assistant, text: "")])
+        XCTAssertEqual(messages[0]["content"] as? String, "…")
+    }
+}
