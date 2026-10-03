@@ -5,9 +5,21 @@ let package = Package(
     name: "StudySprint",
     platforms: [.macOS(.v13)],
     targets: [
+        // Pure logic: API client, streaming, parsing, scheduling. No UI, fully unit-tested.
+        .target(
+            name: "StudySprintCore",
+            path: "Sources/StudySprintCore"
+        ),
+        // The SwiftUI app.
         .executableTarget(
             name: "StudySprint",
+            dependencies: ["StudySprintCore"],
             path: "Sources/StudySprint"
-        )
+        ),
+        .testTarget(
+            name: "StudySprintCoreTests",
+            dependencies: ["StudySprintCore"],
+            path: "Tests/StudySprintCoreTests"
+        ),
     ]
 )
