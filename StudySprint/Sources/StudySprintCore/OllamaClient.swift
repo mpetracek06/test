@@ -160,6 +160,11 @@ public struct OllamaClient: ChatBackend {
         public var status: String
         public var completed: Int64
         public var total: Int64
+        public init(status: String, completed: Int64, total: Int64) {
+            self.status = status
+            self.completed = completed
+            self.total = total
+        }
         public var fraction: Double { total > 0 ? Double(completed) / Double(total) : 0 }
     }
 
