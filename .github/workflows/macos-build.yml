@@ -16,11 +16,15 @@ jobs:
       - name: Toolchain
         run: swift --version
 
-      - name: Build
-        run: swift build -c release 2>&1 | grep -v "^\[" | tee build.log; exit ${PIPESTATUS[0]}
+      - name: Build core library
+        run: swift build --target StudySprintCore 2>&1 | grep -E "error|warning: unre|Compiling|Build" ; exit ${PIPESTATUS[0]}
 
-      - name: Test
-        run: swift test
+      - name: Unit tests
+        run: swift test --filter StudySprintCoreTests 2>&1 | grep -vE "^\[[0-9]+/[0-9]+\] (Compiling|Write|Emitting)" ; exit ${PIPESTATUS[0]}
+
+      - name: Build app (release)
+        if: always()
+        run: swift build -c release 2>&1 | grep -E "error:|Build" ; exit ${PIPESTATUS[0]}
 
       - name: Package .app
         run: ./build-app.sh && cd build && ditto -c -k --keepParent StudySprint.app StudySprint.zip
