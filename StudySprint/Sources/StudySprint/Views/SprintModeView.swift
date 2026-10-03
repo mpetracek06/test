@@ -50,7 +50,7 @@ struct SprintModeView: View {
                                         Text("Lesson hidden").font(.title3.bold())
                                         Text("Recall works only if you can't see the answer.")
                                             .foregroundStyle(.secondary)
-                                        Button("Peek (counts as a miss)") {
+                                        Button("Peek at the lesson") {
                                             peeked = true
                                         }
                                         .buttonStyle(.link)
