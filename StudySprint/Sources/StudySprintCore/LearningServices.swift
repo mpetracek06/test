@@ -136,6 +136,10 @@ public struct LearningServices {
     public struct TestOutVerdict: Sendable, Equatable {
         public var passed: Bool
         public var feedback: String
+        public init(passed: Bool, feedback: String) {
+            self.passed = passed
+            self.feedback = feedback
+        }
     }
 
     public func gradeTestOut(stepTitle: String, testOut: TestOut, answer: String) async throws -> TestOutVerdict {

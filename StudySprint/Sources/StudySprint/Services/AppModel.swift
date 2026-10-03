@@ -243,7 +243,8 @@ final class AppModel: ObservableObject {
         case "review": selection = .review
         default:
             selection = .guide(g.id)
-            tab = GuideTab.allCases.first { $0.rawValue.lowercased().hasPrefix(screen) } ?? (screen == "feynman" ? .feynman : .plan)
+            tab = screen == "quizq" ? .quiz
+                : GuideTab.allCases.first { $0.rawValue.lowercased().hasPrefix(screen) } ?? (screen == "feynman" ? .feynman : .plan)
         }
     }
 

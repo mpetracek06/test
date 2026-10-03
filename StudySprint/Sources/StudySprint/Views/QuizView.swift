@@ -34,6 +34,12 @@ struct QuizView: View {
             .frame(maxWidth: 820)
             .frame(maxWidth: .infinity)
         }
+        .onAppear {
+            if AppModel.screenshotScreen == "quizq" && questions.isEmpty {
+                questions = DemoContent.quiz()
+                answers[questions[0].id] = 0
+            }
+        }
     }
 
     // MARK: Start

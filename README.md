@@ -2,6 +2,13 @@
 
 **Learn anything in the least time possible.** A native macOS app: drop in your notes and Claude researches the topic live, finds the best videos (and exactly which minutes to watch, at what speed), and builds the shortest path to mastery. Then it teaches you through it, tests you, and keeps you from forgetting it.
 
+<p align="center">
+  <img src="docs/screenshots/plan.png" width="49%" alt="Study plan">
+  <img src="docs/screenshots/sprint.png" width="49%" alt="Sprint Mode">
+</p>
+
+*Screenshots are captured automatically from the real app on a macOS CI runner.*
+
 ## What it does
 
 | | |
@@ -15,8 +22,13 @@
 | ✅ **Adaptive quizzes** | Fresh multiple-choice questions each time. Results show your weak steps, and one click hands them to the tutor to fix. |
 | 🧑‍🏫 **Feynman mode** | Explain a concept in your own words; get a score, what you nailed, your gaps and misconceptions, and a tighter version. |
 | 🧠 **Spaced repetition** | Flashcards scheduled with SM-2 across all your guides, a daily streak, a cram mode, and a menu-bar counter of cards due. |
+| 📸 **Photos of notes** | Drop or paste photos of handwritten notes, or scanned PDFs. Claude reads them directly, diagrams included. |
+| 🆘 **"Stuck?" buttons** | One click on any step: explain it simpler, give another example, explain why it matters, or quiz me. |
+| 🔔 **Review reminders** | A notification when flashcards come due, so the spacing actually happens. |
 | 📄 **Cheat sheet PDF** | A dense printable summary, plus Markdown export. |
 | 🔊 **Read aloud** | Any explanation, read to you. |
+| 💸 **Cost shown** | Each guide shows roughly what it cost to build. |
+| 🧪 **Demo sprint** | Explore a complete sample sprint before you even add an API key. |
 
 ## Get it running
 
@@ -35,6 +47,18 @@ open build/StudySprint.app
 Or open `StudySprint/Package.swift` in Xcode and press ⌘R.
 
 On first launch, paste your API key into the banner (or **Settings, ⌘,**). It's stored in your Keychain.
+
+## Tour
+
+| Live research | Knowledge map |
+|---|---|
+| ![](docs/screenshots/research.png) | ![](docs/screenshots/map.png) |
+| **Test out of a step** | **Recall check** |
+| ![](docs/screenshots/testout.png) | ![](docs/screenshots/recall.png) |
+| **AI tutor** | **Quiz** |
+| ![](docs/screenshots/tutor.png) | ![](docs/screenshots/quizq.png) |
+| **Feynman grading** | **Spaced-repetition review** |
+| ![](docs/screenshots/feynman.png) | ![](docs/screenshots/review.png) |
 
 ## Keyboard shortcuts
 

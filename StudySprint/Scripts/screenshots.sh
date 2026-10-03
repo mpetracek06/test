@@ -8,7 +8,7 @@ mkdir -p "$OUT"
 BIN="build/StudySprint.app/Contents/MacOS/StudySprint"
 swiftc -O Scripts/window-id.swift -o /tmp/window-id 2>/dev/null
 
-for screen in new research plan sprint map tutor quiz feynman cards review; do
+for screen in new research plan sprint testout recall map tutor quiz quizq feynman cards review; do
   STUDYSPRINT_SCREEN="$screen" "$BIN" >/dev/null 2>&1 &
   pid=$!
   sleep 7

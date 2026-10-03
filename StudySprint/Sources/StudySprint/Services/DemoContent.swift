@@ -130,4 +130,20 @@ enum DemoContent {
         g.createdAt = Date()
         return g
     }
+
+    static func quiz() -> [QuizQuestion] {
+        [
+            QuizQuestion(question: "A drug blocks ATP synthase but electron transport keeps running. What happens to the proton gradient?",
+                         choices: ["It disappears", "It gets steeper, because H⁺ is still pumped but can't flow back",
+                                   "It reverses direction", "Nothing — the gradient doesn't depend on ATP synthase"],
+                         correctIndex: 1,
+                         explanation: "Pumping continues but the only way back (ATP synthase) is blocked, so H⁺ piles up. The tempting answer \"it disappears\" mixes up cause and effect.",
+                         stepNumber: 4),
+            QuizQuestion(question: "Where does most of the CO₂ you exhale come from?",
+                         choices: ["Glycolysis", "The electron transport chain", "Pyruvate oxidation and the Krebs cycle", "Fermentation"],
+                         correctIndex: 2,
+                         explanation: "Carbons leave as CO₂ during pyruvate oxidation and the Krebs cycle. The ETC consumes O₂ but releases no CO₂.",
+                         stepNumber: 3),
+        ]
+    }
 }

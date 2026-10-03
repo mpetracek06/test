@@ -57,6 +57,16 @@ struct SprintModeView: View {
             if guide.nextStepIndex == nil { phase = .complete }
             sessionStart = Date()
             resetStep()
+            switch AppModel.screenshotScreen {
+            case "recall":
+                phase = .recall
+                recallChecked = [0]
+            case "testout":
+                phase = .testOut
+                testAnswer = "Pyruvate goes into the mitochondria and gets broken down; it mostly makes NADH and FADH2 that carry electrons to the ETC, and releases CO2. Only a little ATP."
+                verdict = .init(passed: true, feedback: "Spot on — you named the location, the real products (loaded electron carriers), and the CO₂. Skipping saves you 12 minutes.")
+            default: break
+            }
         }
         .onDisappear {
             app.recordStudy(guideID: guide.id, minutes: Date().timeIntervalSince(sessionStart) / 60)

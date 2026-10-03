@@ -41,7 +41,7 @@ struct GuideDetailView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .onAppear {
-            if AppModel.screenshotScreen == "sprint" { showSprint = true }
+            if ["sprint", "recall", "testout"].contains(AppModel.screenshotScreen ?? "") { showSprint = true }
         }
         .sheet(isPresented: $showSprint) {
             SprintModeView(guide: $guide)

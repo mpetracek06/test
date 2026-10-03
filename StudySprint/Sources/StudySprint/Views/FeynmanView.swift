@@ -115,6 +115,11 @@ struct FeynmanView: View {
         }
         .onAppear {
             if concept.isEmpty { concept = concepts.first ?? "" }
+            if AppModel.screenshotScreen == "feynman", let last = guide.feynmanResults.last {
+                result = last
+                concept = last.concept
+                explanation = last.explanation
+            }
         }
     }
 
