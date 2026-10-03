@@ -65,7 +65,7 @@ private struct NewGuideContent: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             GradientTitle(text: "Learn anything, fast.", size: 34)
-            Text("Drop in your notes. Claude researches the topic, finds the best videos (and exactly which minutes to watch), and builds the shortest path to mastery: core ideas first, then quizzes, a tutor, and spaced-repetition flashcards.")
+            Text("Drop in your notes. StudySprint finds the best videos and builds the shortest path to mastery: core ideas first, then quizzes, a tutor, and spaced-repetition flashcards.")
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
