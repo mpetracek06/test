@@ -1,58 +1,79 @@
-# StudySprint (macOS)
+# StudySprint
 
-A native macOS app: paste or drop in your notes, pick how much time you have, and get a study guide built to make you learn the topic **as fast as possible**.
+**Learn anything in the least time possible.** A native macOS app: drop in your notes and Claude researches the topic live, finds the best videos (and exactly which minutes to watch, at what speed), and builds the shortest path to mastery. Then it teaches you through it, tests you, and keeps you from forgetting it.
 
-Each guide gives you:
+## What it does
 
-- **TL;DR** of the whole topic
-- **The 20% that gets you 80%**: the few core ideas to learn first
-- **A time-boxed learning path** that fits your budget (30 min to 1 day), ordered so each step builds on the one before
-- **Real videos found with live web search**, with which part to watch and at what speed (e.g. "Watch 1:30–7:45 at 1.5x"). Links that didn't come from an actual search result are swapped for a YouTube search, so you never get a made-up link.
-- **Active-recall questions** after each step, **flashcards** (with an "again / got it" drill), **common mistakes**, a **safe-to-skip** list, and a **final self-test**
-- A **sprint timer**, progress tracking, saved guide history, and **Markdown export**
+| | |
+|---|---|
+| ⚡ **Live research** | Watch Claude work in real time: every web search, every source it reads, how many videos it finds. |
+| 🎯 **80/20 study plan** | The few core ideas first, then a dependency-ordered path that fits your time budget (15 min → 1 day). Every step has a worked example, an analogy, key points and recall questions. |
+| ▶️ **Videos, trimmed** | Videos play inside the app, starting at the segment that matters, at the suggested speed. Links are checked against real search results, so you never get a made-up link. |
+| 🏃 **Sprint Mode** | Full-focus mode, one step at a time: lesson on the left, video on the right, a countdown per step. **Already know it?** Answer one question; if Claude agrees, you skip the step. Before moving on you pass a **recall check**. |
+| 🗺️ **Knowledge map** | See how the ideas build on each other, colored by your progress. |
+| 🎓 **AI tutor** | Chat with a tutor that knows your whole guide. It can re-explain, quiz you, or search for another video. |
+| ✅ **Adaptive quizzes** | Fresh multiple-choice questions each time. Results show your weak steps, and one click hands them to the tutor to fix. |
+| 🧑‍🏫 **Feynman mode** | Explain a concept in your own words; get a score, what you nailed, your gaps and misconceptions, and a tighter version. |
+| 🧠 **Spaced repetition** | Flashcards scheduled with SM-2 across all your guides, a daily streak, a cram mode, and a menu-bar counter of cards due. |
+| 📄 **Cheat sheet PDF** | A dense printable summary, plus Markdown export. |
+| 🔊 **Read aloud** | Any explanation, read to you. |
 
-Notes can be typed or pasted, or imported from `.txt`, `.md`, `.pdf`, `.docx`, `.rtf` or `.html` files.
+## Get it running
 
-## Requirements
+You need macOS 13 or later and an Anthropic API key from [console.anthropic.com](https://console.anthropic.com).
 
-- macOS 13 (Ventura) or later
-- Xcode 15+ or the Swift 5.9+ command-line tools (`xcode-select --install`)
-- An Anthropic API key from https://console.anthropic.com
+**Option A: download the built app.** Every push builds the app on GitHub's macOS runners. Open the latest successful run under **Actions → macOS build**, download the **StudySprint-app** artifact, unzip it, and drag `StudySprint.app` into Applications. The first time, right-click it and choose **Open** (the build is ad-hoc signed, not notarized).
 
-## Build and run
+**Option B: build it yourself** (needs Xcode 15+ or the Swift command-line tools):
 
 ```bash
 cd StudySprint
-./build-app.sh            # builds build/StudySprint.app
+./build-app.sh
 open build/StudySprint.app
 ```
 
-Drag `build/StudySprint.app` into `/Applications` to keep it. For quick development you can also run `swift run` from `StudySprint/`, or open `StudySprint/Package.swift` in Xcode and press ⌘R.
+Or open `StudySprint/Package.swift` in Xcode and press ⌘R.
 
-On first launch, open **StudySprint → Settings… (⌘,)** and paste your API key. It's stored in your macOS Keychain.
+On first launch, paste your API key into the banner (or **Settings, ⌘,**). It's stored in your Keychain.
+
+## Keyboard shortcuts
+
+| | |
+|---|---|
+| ⌘N | New sprint |
+| ⌘↩ | Build / submit |
+| ⇧⌘S | Start Sprint Mode |
+| ⇧⌘R | Review due cards |
+| ⌘1 … ⌘6 | Plan · Map · Tutor · Quiz · Explain It · Cards |
+| Space · 1–4 | Flip card · Again / Hard / Good / Easy |
 
 ## How it works
 
-The app sends your notes to Claude (`claude-opus-5-5`) with the server-side **web search** tool turned on. Claude works out what you need to know, searches for the best short videos for each step, and returns the guide as JSON. The app then:
-
-1. checks every video URL against the URLs that actually came back from search, and replaces unverified ones with a YouTube search link
-2. saves the guide to `~/Library/Application Support/StudySprint/guides.json`
-
-A guide usually takes 1–3 minutes to build because Claude runs several searches. Each guide costs a few cents to a few tens of cents in API usage, depending on how long your notes are.
+- **Model:** Claude Opus 5.5 by default (Sonnet 5.5 and Fable 5.1 can be picked in Settings).
+- **Research:** uses Claude's server-side web search, streamed over SSE so the UI updates live. Claude's progress notes between searches show up in the feed. Long research turns that pause are resumed automatically.
+- **Reliability:**
+  - Server-side refusal fallbacks are enabled.
+  - Malformed JSON is repaired with structured outputs.
+  - Tutor chats replay Claude's exact earlier responses and cache the guide in the prompt.
+- **Cost:** a guide usually costs a few cents to a few tens of cents depending on note length and research depth. Quizzes, grading and tutor replies are cheaper still.
+- **Your data:** everything is local, in `~/Library/Application Support/StudySprint/`.
 
 ## Project layout
 
 ```
 StudySprint/
   Package.swift
-  build-app.sh                 # packages a double-clickable .app
-  Sources/StudySprint/
-    StudySprintApp.swift
-    Models/StudyGuide.swift
-    Services/ClaudeClient.swift    # Messages API + web search + JSON parsing
-    Services/GuideStore.swift      # saved guides
-    Services/KeychainStore.swift   # API key storage
-    Services/NotesImporter.swift   # text from PDF/DOCX/RTF/MD
-    Services/MarkdownExporter.swift
-    Views/                         # SwiftUI screens
+  build-app.sh                      # packages a double-clickable .app
+  Sources/StudySprintCore/          # pure logic, unit-tested
+    AnthropicClient.swift           #   Messages API client, SSE stream reassembly
+    GuideGenerator.swift            #   research + guide building
+    LearningServices.swift          #   tutor, quiz, Feynman, test-out grading
+    Prompts.swift, GuideParsing.swift, Models.swift
+    SpacedRepetition.swift          #   SM-2 scheduler, streaks
+    MarkdownExporter.swift
+  Sources/StudySprint/              # SwiftUI app
+    Services/                       #   app state, Keychain, importers, speech
+    Views/                          #   every screen
+  Tests/StudySprintCoreTests/
+.github/workflows/macos-build.yml   # builds, tests, and packages the .app on macOS
 ```
