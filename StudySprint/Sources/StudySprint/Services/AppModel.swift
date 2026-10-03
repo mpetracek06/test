@@ -56,9 +56,25 @@ final class AppModel: ObservableObject {
     private var logURL: URL { directory.appendingPathComponent("study-log.json") }
     private var pendingSave: DispatchWorkItem?
 
+    /// CI sets this to launch straight into a screen with demo data, for screenshots.
+    static let screenshotScreen = ProcessInfo.processInfo.environment["STUDYSPRINT_SCREEN"]
+    /// When true nothing is written to disk.
+    private var isEphemeral = false
+
     init() {
-        load()
         generation.app = self
+        if let screen = Self.screenshotScreen {
+            setUpScreenshot(screen)
+        } else {
+            load()
+        }
+    }
+
+    /// Adds the built-in sample sprint so people can explore without an API key.
+    func loadDemo() {
+        let demo = DemoContent.guide()
+        add(demo)
+        open(demo.id)
     }
 
     // MARK: Clients
@@ -170,6 +186,7 @@ final class AppModel: ObservableObject {
     }
 
     private func scheduleSave() {
+        guard !isEphemeral else { return }
         pendingSave?.cancel()
         let work = DispatchWorkItem { [weak self] in self?.saveNow() }
         pendingSave = work
@@ -177,10 +194,57 @@ final class AppModel: ObservableObject {
     }
 
     func saveNow() {
+        guard !isEphemeral else { return }
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         if let data = try? encoder.encode(guides) { try? data.write(to: guidesURL, options: .atomic) }
         if let data = try? encoder.encode(log) { try? data.write(to: logURL, options: .atomic) }
+    }
+
+    private func setUpScreenshot(_ screen: String) {
+        isEphemeral = true
+        hasAPIKey = true
+        var g = DemoContent.guide()
+        g.steps[0].status = .done
+        g.steps[1].status = .testedOut
+        g.minutesStudied = 23
+        g.tutorTurns = [
+            ChatTurn(role: .user, text: "Why does oxygen matter so much? Glycolysis doesn't even use it."),
+            ChatTurn(role: .assistant, text: "Great question — oxygen matters because it's the **last stop** for electrons.\n\nThe electron transport chain is like a bucket brigade: each protein passes electrons down the line, and that flow pumps the H⁺ that drives ATP synthase. Oxygen is the person at the end who takes the bucket. **No oxygen → nobody takes the last bucket → the whole line stops**, and ~90% of your ATP production stops with it.\n\nGlycolysis can keep going without O₂ (via fermentation), but it only makes **2 ATP** per glucose instead of ~30.\n\n**Quick check:** if the chain stops, what happens to the NADH made in glycolysis?"),
+        ]
+        g.quizAttempts = [QuizAttempt(score: 5, total: 8, missedSteps: [3, 4]),
+                          QuizAttempt(score: 7, total: 8, missedSteps: [4]),
+                          QuizAttempt(score: 8, total: 8, missedSteps: [])]
+        g.feynmanResults = [FeynmanResult(
+            concept: "Electron transport chain & chemiosmosis",
+            explanation: "Electrons from NADH go down a chain of proteins in the mitochondria and that makes energy. Oxygen is at the end and makes water. The energy is used to make ATP.",
+            score: 72,
+            verdict: "You've got the flow of electrons and oxygen's role, but you skipped the **proton gradient** — the actual mechanism that makes ATP.",
+            nailed: ["Electrons come from NADH", "Oxygen is the final acceptor and forms water"],
+            gaps: ["How electron flow pumps H⁺ across the inner membrane", "ATP synthase is driven by H⁺ flowing back"],
+            misconceptions: ["The chain doesn't 'make energy' — it converts it into a proton gradient"],
+            improvedExplanation: "NADH hands its electrons to a chain of proteins in the inner mitochondrial membrane. As electrons pass along, the proteins pump H⁺ to one side, like pumping water up behind a dam. The H⁺ rushes back through ATP synthase — a tiny turbine — which makes ATP. Oxygen catches the used electrons at the end, forming water.",
+            followUpQuestion: "What would happen to ATP production if the inner membrane became leaky to H⁺?")]
+        for i in g.flashcards.indices where i % 3 == 0 {
+            g.flashcards[i].review = Scheduler.schedule(ReviewState(), grade: .good, now: Date().addingTimeInterval(-86_400 * 2))
+        }
+        var second = DemoContent.guide()
+        second.topic = "Big-O Notation"
+        second.emoji = "📈"
+        for i in second.steps.indices { second.steps[i].status = .done }
+        guides = [g, second]
+        for d in 0..<6 { log.record(review: Date().addingTimeInterval(-86_400 * Double(d))) }
+
+        switch screen {
+        case "new": selection = .newGuide
+        case "research":
+            selection = .newGuide
+            generation.simulateForScreenshot()
+        case "review": selection = .review
+        default:
+            selection = .guide(g.id)
+            tab = GuideTab.allCases.first { $0.rawValue.lowercased().hasPrefix(screen) } ?? (screen == "feynman" ? .feynman : .plan)
+        }
     }
 
     func revealDataFolder() {
@@ -243,6 +307,32 @@ final class GenerationController: ObservableObject {
             }
             self?.isRunning = false
         }
+    }
+
+    /// Fills the live research screen with sample activity (screenshots only).
+    func simulateForScreenshot() {
+        isRunning = true
+        startedAt = Date().addingTimeInterval(-74)
+        phase = "Searching the web…"
+        let found = [
+            SearchHit(title: "Cellular Respiration Overview | Biology", url: "https://www.youtube.com/watch?v=sample1"),
+            SearchHit(title: "Electron transport chain animation", url: "https://www.youtube.com/watch?v=sample2"),
+            SearchHit(title: "Cellular respiration — Khan Academy", url: "https://www.khanacademy.org/science/biology"),
+            SearchHit(title: "Krebs cycle summary — OpenStax Biology 2e", url: "https://openstax.org/books/biology-2e"),
+        ]
+        items = [
+            ResearchLogItem(kind: .phase, text: "Reading your notes…"),
+            ResearchLogItem(kind: .note, text: "Notes cover all four stages; the exam focus is locations, inputs/outputs, and oxygen's role."),
+            ResearchLogItem(kind: .search, text: "cellular respiration explained visually"),
+            ResearchLogItem(kind: .found, text: "10 results", hits: found),
+            ResearchLogItem(kind: .search, text: "electron transport chain ATP synthase animation"),
+            ResearchLogItem(kind: .found, text: "10 results", hits: Array(found.prefix(2))),
+            ResearchLogItem(kind: .note, text: "Found a short animation for ATP synthase; looking for a tight Krebs cycle summary next."),
+            ResearchLogItem(kind: .search, text: "krebs cycle summary short video"),
+        ]
+        sources = found + [SearchHit(title: "x", url: "https://example.com/1"), SearchHit(title: "y", url: "https://example.com/2")]
+        searches = 3
+        characters = 0
     }
 
     func cancel() {

@@ -105,6 +105,8 @@ private struct NewGuideContent: View {
                             topic = sample.title
                         }
                     }
+                    Divider()
+                    Button("Open the ready-made demo sprint") { app.loadDemo() }
                 } label: {
                     Label("Try an example", systemImage: "wand.and.stars")
                 }
@@ -227,6 +229,12 @@ private struct APIKeyBanner: View {
                     .disabled(key.trimmingCharacters(in: .whitespaces).isEmpty)
                     .keyboardShortcut(.defaultAction)
             }
+            HStack(spacing: 6) {
+                Text("Just looking?").foregroundStyle(.secondary)
+                Button("Explore a demo sprint →") { app.loadDemo() }
+                    .buttonStyle(.link)
+            }
+            .font(.callout)
         }
     }
 }

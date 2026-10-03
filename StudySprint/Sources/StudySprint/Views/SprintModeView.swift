@@ -161,7 +161,19 @@ struct SprintModeView: View {
 
     @ViewBuilder
     private var videoPane: some View {
-        if playableVideos.isEmpty {
+        if playableVideos.isEmpty, let videos = step?.videos, !videos.isEmpty {
+            VStack(alignment: .leading, spacing: 16) {
+                Label("Suggested videos", systemImage: "play.rectangle.fill")
+                    .font(.title3.bold())
+                Text("These open a YouTube search in your browser. Watch only the part noted, then come back and hit **Done**.")
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                ForEach(videos) { VideoRow(video: $0, onPlay: { _ in }) }
+                Spacer()
+            }
+            .padding(28)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        } else if playableVideos.isEmpty {
             VStack(spacing: 14) {
                 Image(systemName: "book.pages")
                     .font(.system(size: 52))
@@ -171,9 +183,6 @@ struct SprintModeView: View {
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 360)
-                if let other = step?.videos.first, let url = URL(string: other.url) {
-                    Link("Search YouTube for “\(other.title)” instead", destination: url).font(.callout)
-                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {

@@ -21,6 +21,7 @@ struct StudySprintApp: App {
                     app.saveNow()
                 }
         }
+        .defaultSize(width: 1320, height: 860)
         .windowToolbarStyle(.unified)
         .commands {
             CommandGroup(replacing: .newItem) {
