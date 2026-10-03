@@ -1,0 +1,31 @@
+name: macOS build
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: StudySprint
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: swift --version
+
+      - name: Build
+        run: swift build -c release 2>&1 | grep -v "^\[" | tee build.log; exit ${PIPESTATUS[0]}
+
+      - name: Test
+        run: swift test
+
+      - name: Package .app
+        run: ./build-app.sh && cd build && ditto -c -k --keepParent StudySprint.app StudySprint.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: StudySprint-app
+          path: StudySprint/build/StudySprint.zip
