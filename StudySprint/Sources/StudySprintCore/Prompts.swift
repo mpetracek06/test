@@ -144,7 +144,8 @@ enum Prompts {
     Make an outline:
     - topic: a short name. emoji: one emoji for the topic. tldr: 2-3 sentences summarizing everything.
     - paretoConcepts: the few core ideas that unlock most of the topic.
-    - steps: 3 to 8 steps in dependency order (basics first). Each step:
+    - steps: 3 to 8 steps in dependency order (basics first). Every step teaches part of the topic itself; \
+    never make steps about studying (like "make flashcards" or "review notes"). Each step:
       - title: short and specific.
       - minutes: realistic minutes to learn it. All steps together must fit the time budget.
       - why: one sentence on why this step comes at this point.

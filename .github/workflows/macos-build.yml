@@ -44,8 +44,10 @@ jobs:
           path: StudySprint/build/StudySprint.zip
 
   # Free mode end to end: real Ollama + a small open model + live YouTube search.
+  # Slow on CPU-only runners (~15 min), so it runs on request: put "[free-mode]" in a commit message.
   free-mode:
     needs: build
+    if: contains(github.event.head_commit.message, '[free-mode]') || github.event_name == 'workflow_dispatch'
     runs-on: macos-15
     timeout-minutes: 40
     defaults:
