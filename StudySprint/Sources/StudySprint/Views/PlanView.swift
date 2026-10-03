@@ -100,22 +100,23 @@ struct StepCard: View {
 
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .center, spacing: 12) {
-                Menu {
-                    Button("Mark done") { step.status = .done }
-                    Button("Mark tested out") { step.status = .testedOut }
-                    Button("Reset") { step.status = .notStarted }
+                Button {
+                    withAnimation(.easeOut(duration: 0.15)) {
+                        step.status = step.status.isComplete ? .notStarted : .done
+                        expanded = !step.status.isComplete
+                    }
                 } label: {
                     Image(systemName: step.status.icon)
                         .font(.title2)
                         .foregroundStyle(step.status.color)
-                } primaryAction: {
-                    step.status = step.status.isComplete ? .notStarted : .done
-                    expanded = !step.status.isComplete
                 }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .help("Click to toggle done; hold for more")
+                .buttonStyle(.plain)
+                .contextMenu {
+                    Button("Mark done") { step.status = .done }
+                    Button("Mark tested out") { step.status = .testedOut }
+                    Button("Reset") { step.status = .notStarted }
+                }
+                .help("Click to toggle done; right-click for more")
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 8) {

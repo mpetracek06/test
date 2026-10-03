@@ -14,7 +14,17 @@ struct FeynmanView: View {
 
     private var concepts: [String] {
         var seen = Set<String>()
-        return (guide.paretoConcepts + guide.steps.map(\.title)).filter { seen.insert($0).inserted }
+        return (guide.paretoConcepts.map(Self.conceptName) + guide.steps.map(\.title))
+            .filter { !$0.isEmpty && seen.insert($0.lowercased()).inserted }
+    }
+
+    /// "**ATP is energy currency**: respiration…" → "ATP is energy currency"
+    static func conceptName(_ s: String) -> String {
+        if s.hasPrefix("**"), let end = s.dropFirst(2).range(of: "**") {
+            return String(s[s.index(s.startIndex, offsetBy: 2)..<end.lowerBound])
+        }
+        let plain = s.replacingOccurrences(of: "**", with: "").replacingOccurrences(of: "`", with: "")
+        return String(plain.split(separator: ":").first ?? Substring(plain)).trimmingCharacters(in: .whitespaces)
     }
 
     var body: some View {
@@ -46,7 +56,7 @@ struct FeynmanView: View {
                             .scrollContentBackground(.hidden)
                             .padding(8)
                         if explanation.isEmpty {
-                            Text("So basically, \(concept.isEmpty ? "this" : concept.lowercased()) is…")
+                            Text("Explain “\(concept)” in your own words, as if to a 12-year-old…")
                                 .foregroundStyle(.tertiary)
                                 .padding(14)
                                 .allowsHitTesting(false)

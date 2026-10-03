@@ -7,8 +7,8 @@ struct KnowledgeMapView: View {
     var onStartSprint: () -> Void
     @State private var selected: Int?
 
-    private let nodeSize = CGSize(width: 200, height: 70)
-    private let columnGap: CGFloat = 90
+    private let nodeSize = CGSize(width: 190, height: 70)
+    private let columnGap: CGFloat = 56
     private let rowGap: CGFloat = 26
     private let margin: CGFloat = 30
 
@@ -37,8 +37,11 @@ struct KnowledgeMapView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            ScrollView([.horizontal, .vertical]) {
+            GeometryReader { geo in
                 let pts = positions
+                let size = canvasSize
+                // Shrink to fit the window (but never enlarge past 1:1).
+                let scale = min(1, (geo.size.width - 20) / max(size.width, 1), (geo.size.height - 20) / max(size.height, 1))
                 ZStack(alignment: .topLeading) {
                     edges(pts)
                     ForEach(guide.steps.indices, id: \.self) { i in
@@ -46,8 +49,10 @@ struct KnowledgeMapView: View {
                             .position(pts[i])
                     }
                 }
-                .frame(width: canvasSize.width, height: canvasSize.height)
-                .padding(10)
+                .frame(width: size.width, height: size.height)
+                .scaleEffect(scale)
+                .frame(width: size.width * scale, height: size.height * scale)
+                .frame(width: geo.size.width, height: geo.size.height)
             }
             .background(
                 Canvas { ctx, size in
