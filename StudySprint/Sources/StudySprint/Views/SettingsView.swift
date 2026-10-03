@@ -18,8 +18,10 @@ struct SettingsView: View {
                     ForEach(EngineKind.allCases) { Text($0.title).tag($0) }
                 }
                 .pickerStyle(.radioGroup)
-                if app.engineKind == .free {
-                    FreeSetupSteps(ollama: app.ollama, showModelPicker: true)
+                switch app.engineKind {
+                case .free: FreeSetupSteps(ollama: app.ollama, showModelPicker: true)
+                case .plan: PlanSetupSteps(claudeCode: app.claudeCode, showModelPicker: true)
+                case .claude: EmptyView()
                 }
             }
 

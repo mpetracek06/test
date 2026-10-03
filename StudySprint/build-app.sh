@@ -35,6 +35,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.education</string>
   <key>NSHighResolutionCapable</key><true/>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>StudySprint opens Terminal to install or log in to Claude Code when you ask it to.</string>
   <key>NSAppTransportSecurity</key>
   <dict>
     <!-- Free mode talks to Ollama on this Mac over plain http://127.0.0.1 -->

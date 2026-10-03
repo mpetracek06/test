@@ -38,13 +38,22 @@ enum SettingsKey {
 /// Which AI does the work.
 enum EngineKind: String, CaseIterable, Identifiable {
     case free
+    case plan
     case claude
 
     var id: String { rawValue }
     var title: String {
         switch self {
         case .free: return "Free — runs on your Mac"
-        case .claude: return "Claude — best results (paid API)"
+        case .plan: return "Your Claude plan — uses plan usage, no API credit"
+        case .claude: return "Claude API — pay per use"
+        }
+    }
+    var shortTitle: String {
+        switch self {
+        case .free: return "Free (on your Mac)"
+        case .plan: return "My Claude plan"
+        case .claude: return "API key"
         }
     }
 }
@@ -64,6 +73,7 @@ final class AppModel: ObservableObject {
 
     let generation = GenerationController()
     let ollama = OllamaManager()
+    let claudeCode = ClaudeCodeManager()
 
     private let directory: URL = {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -85,6 +95,14 @@ final class AppModel: ObservableObject {
         let saved = UserDefaults.standard.string(forKey: SettingsKey.engine).flatMap(EngineKind.init(rawValue:))
         engineKind = saved ?? (KeychainStore.loadAPIKey()?.isEmpty == false ? .claude : .free)
         generation.app = self
+        // First launch: if Claude Code is already set up with a Claude plan, use that.
+        if saved == nil && Self.screenshotScreen == nil {
+            Task { @MainActor [weak self] in
+                guard let self, await self.claudeCode.refresh(), self.engineKind == .free,
+                      UserDefaults.standard.string(forKey: SettingsKey.engine) == nil else { return }
+                self.engineKind = .plan
+            }
+        }
         if let screen = Self.screenshotScreen {
             setUpScreenshot(screen)
         } else {
@@ -113,6 +131,7 @@ final class AppModel: ObservableObject {
     var engine: StudyEngine {
         switch engineKind {
         case .claude: return LearningServices(client: client)
+        case .plan: return ClaudeCodeEngine(runner: claudeCode.runner)
         case .free: return LocalEngine(backend: ollama.client)
         }
     }
@@ -123,6 +142,7 @@ final class AppModel: ObservableObject {
     var engineReady: Bool {
         switch engineKind {
         case .claude: return hasAPIKey
+        case .plan: return claudeCode.isReady
         case .free: return ollama.isReady
         }
     }
@@ -130,6 +150,7 @@ final class AppModel: ObservableObject {
     var engineLabel: String {
         switch engineKind {
         case .claude: return ClaudeModel(rawValue: modelID)?.label.components(separatedBy: " — ").first ?? modelID
+        case .plan: return "Claude \(claudeCode.model.rawValue.capitalized) · your Claude plan"
         case .free: return "Free · \(ollama.selectedModel) on your Mac"
         }
     }
@@ -249,7 +270,7 @@ final class AppModel: ObservableObject {
     private func setUpScreenshot(_ screen: String) {
         isEphemeral = true
         hasAPIKey = true
-        engineKind = screen == "setup" ? .free : .claude
+        engineKind = screen == "setup" ? .free : screen == "plansetup" ? .plan : .claude
         var g = DemoContent.guide()
         g.steps[0].status = .done
         g.steps[1].status = .testedOut
@@ -282,7 +303,7 @@ final class AppModel: ObservableObject {
         for d in 0..<6 { log.record(review: Date().addingTimeInterval(-86_400 * Double(d))) }
 
         switch screen {
-        case "new", "setup": selection = .newGuide
+        case "new", "setup", "plansetup": selection = .newGuide
         case "research":
             selection = .newGuide
             generation.simulateForScreenshot()

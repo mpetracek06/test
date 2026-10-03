@@ -441,3 +441,79 @@ final class FreeModeTests: XCTestCase {
         XCTAssertEqual(YouTubeSearch.pickBest(videos).first?.id, "vid1")
     }
 }
+
+// MARK: - Claude plan mode (Claude Code CLI)
+
+final class ClaudeCodeTests: XCTestCase {
+    /// Output captured from the real `claude -p --output-format stream-json` (Claude Code 2.1).
+    func testParsesRealStreamOutput() throws {
+        let url = try XCTUnwrap(Bundle.module.url(forResource: "claude-code-stream", withExtension: "jsonl", subdirectory: "Fixtures"))
+        let lines = try String(contentsOf: url, encoding: .utf8).split(separator: "\n").map(String.init)
+        let parser = ClaudeCodeStreamParser()
+        let events = lines.flatMap { parser.handle($0) }
+
+        XCTAssertEqual(events.first, .initialized(apiKeySource: "none", model: "claude-sonnet-5-5"))
+        XCTAssertTrue(events.contains(.searchQuery("YouTube short video explaining the Krebs cycle")))
+        XCTAssertTrue(events.contains { if case .usage = $0 { return true } else { return false } })
+
+        XCTAssertTrue(parser.finished)
+        XCTAssertFalse(parser.isError)
+        XCTAssertGreaterThan(parser.hits.count, 3)
+        XCTAssertTrue(parser.hits.allSatisfy { $0.url.hasPrefix("https://") })
+        let structured = try XCTUnwrap(parser.structured as? JSON)
+        let url2 = try XCTUnwrap(structured["url"] as? String)
+        XCTAssertNotNil(YouTube.videoID(from: url2))
+    }
+
+    func testLinksParsing() {
+        let text = #"Web search results for query: "x"\n\nLinks: [{"title":"A [b]","url":"https://www.youtube.com/watch?v=1"},{"title":"C","url":"https://c.org"}]\n\nMore text ]"#
+        XCTAssertEqual(ClaudeCodeStreamParser.links(in: text).map(\.url), ["https://www.youtube.com/watch?v=1", "https://c.org"])
+        XCTAssertEqual(ClaudeCodeStreamParser.links(in: "no links"), [])
+    }
+
+    func testErrorResultAndAPIKeyDetection() {
+        let parser = ClaudeCodeStreamParser()
+        XCTAssertEqual(parser.handle(#"{"type":"system","subtype":"init","apiKeySource":"ANTHROPIC_API_KEY","model":"m"}"#),
+                       [.initialized(apiKeySource: "ANTHROPIC_API_KEY", model: "m")])
+        _ = parser.handle(#"{"type":"result","subtype":"success","is_error":true,"result":"Claude AI usage limit reached|1793865600"}"#)
+        XCTAssertTrue(parser.isError)
+        XCTAssertEqual(ClaudeCodeRunner.classify(parser.errorMessage ?? ""), .usageLimit("Claude AI usage limit reached|1793865600"))
+        XCTAssertEqual(ClaudeCodeRunner.classify("Invalid API key · Please run /login"), .notLoggedIn)
+    }
+
+    func testEnvironmentNeverBillsAnAPIKey() {
+        setenv("ANTHROPIC_API_KEY", "sk-test", 1)
+        defer { unsetenv("ANTHROPIC_API_KEY") }
+        let env = ClaudeCodeRunner.environment(searchPath: "/usr/bin")
+        XCTAssertNil(env["ANTHROPIC_API_KEY"])
+        XCTAssertNil(env["ANTHROPIC_AUTH_TOKEN"])
+        XCTAssertEqual(env["PATH"], "/usr/bin")
+    }
+
+    func testAuthStatusParsing() {
+        let sub = ClaudeCodeRunner.parseAuthStatus(#"{"loggedIn": true, "authMethod": "claude.ai", "apiProvider": "firstParty"}"#)
+        XCTAssertEqual(sub?.usesSubscription, true)
+        let key = ClaudeCodeRunner.parseAuthStatus(#"{"loggedIn": true, "authMethod": "api_key"}"#)
+        XCTAssertEqual(key?.usesSubscription, false)
+        XCTAssertEqual(ClaudeCodeRunner.parseAuthStatus(#"{"loggedIn": false}"#)?.usesSubscription, false)
+    }
+
+    func testTutorTranscript() {
+        XCTAssertEqual(ClaudeCodeEngine.transcript([ChatTurn(role: .user, text: "Hi")]), "Hi")
+        let t = ClaudeCodeEngine.transcript([ChatTurn(role: .user, text: "Q1"), ChatTurn(role: .assistant, text: "A1"),
+                                             ChatTurn(role: .user, text: "Q2")])
+        XCTAssertTrue(t.contains("Learner: Q1"))
+        XCTAssertTrue(t.contains("Tutor: A1"))
+        XCTAssertTrue(t.hasSuffix("Q2"))
+    }
+
+    func testEngineWithoutClaudeCodeExplainsSetup() async {
+        let engine = ClaudeCodeEngine(runner: nil)
+        do {
+            _ = try await engine.structured(system: "", prompt: "", schema: [:], effort: "low")
+            XCTFail("expected an error")
+        } catch {
+            XCTAssertEqual(error as? ClaudeCodeError, .notInstalled)
+        }
+    }
+}

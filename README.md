@@ -30,26 +30,25 @@
 | 💸 **Cost shown** | Each guide shows roughly what it cost to build. |
 | 🧪 **Demo sprint** | Explore a complete sample sprint before you even add an API key. |
 
-## Free or Claude: your choice
+## Three ways to run it, none of them paid per guide unless you want that
 
-| | **Free mode** (default) | **Claude mode** |
-|---|---|---|
-| Cost | **$0, forever** | A few cents per guide (Anthropic API) |
-| Runs on | Your Mac, offline AI via [Ollama](https://ollama.com) | Anthropic's servers |
-| Privacy | Notes never leave your Mac | Sent to the Claude API |
-| Videos | Real YouTube results (free search) | Hand-picked by Claude with live web search, trimmed to the exact segment |
-| Quality | Good (best with Gemma 3 12B on a 16 GB Mac) | Best |
+| | **Free mode** | **Your Claude plan** | **Claude API** |
+|---|---|---|---|
+| Cost | **$0** | **Included in your Claude Pro/Max plan** (counts toward its usage limits; no API credit) | A few cents per guide |
+| How | Open AI model on your Mac via [Ollama](https://ollama.com) | Drives [Claude Code](https://code.claude.com) (`claude -p`), logged in with your Claude account | Anthropic API key |
+| Privacy | Notes never leave your Mac | Sent to Claude | Sent to Claude |
+| Videos | Real YouTube results (free search) | Picked by Claude with live web search | Picked by Claude, trimmed to the exact segment |
+| Quality | Good | Best | Best |
 
-**Free setup (about 5 minutes, one time):** open StudySprint and follow the three steps on the first screen:
-1. **Download Ollama** (free) and drag it to Applications.
-2. **Open Ollama** (it sits in your menu bar).
-3. Click **Download** next to the recommended model (3.3 GB for most Macs, 8.1 GB for the best quality on 16 GB+ Macs).
+**Free setup:** in the app, pick **Free**, then 1) Download Ollama, 2) Open Ollama, 3) click **Download** next to the recommended model.
 
-You can switch engines any time from the menu next to the **Build** button, or in **Settings**.
+**Claude plan setup:** pick **My Claude plan**, then 1) **Install in Terminal** (runs Anthropic's official Claude Code installer), 2) **Log in** and choose your Claude account. StudySprint checks that Claude Code is logged in with your *account*, not an API key, and refuses to run if it would bill an API key, so it never costs money. Use it for your own studying; usage counts toward your plan's limits like any other Claude use.
+
+Switch engines any time from the menu next to **Build**, or in **Settings**.
 
 ## Get it running
 
-You need macOS 13 or later. For free mode you also need [Ollama](https://ollama.com) (free); for Claude mode, an Anthropic API key from [console.anthropic.com](https://console.anthropic.com).
+You need macOS 13 or later, plus one of: [Ollama](https://ollama.com) (free), Claude Code logged in with a Claude Pro/Max plan, or an Anthropic API key.
 
 **Option A: download the built app.** Every push builds the app on GitHub's macOS runners. Open the latest successful run under **Actions → macOS build**, download the **StudySprint-app** artifact, unzip it, and drag `StudySprint.app` into Applications. The first time, right-click it and choose **Open** (the build is ad-hoc signed, not notarized).
 
@@ -63,7 +62,7 @@ open build/StudySprint.app
 
 Or open `StudySprint/Package.swift` in Xcode and press ⌘R.
 
-On first launch, follow the free setup on the first screen, or switch to Claude and paste your API key (it's stored in your Keychain).
+On first launch, pick an engine on the first screen and follow its two or three setup steps.
 
 ## Tour
 

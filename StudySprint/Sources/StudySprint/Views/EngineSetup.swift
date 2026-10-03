@@ -5,19 +5,20 @@ import StudySprintCore
 struct EngineSetupCard: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject var ollama: OllamaManager
+    @ObservedObject var claudeCode: ClaudeCodeManager
 
     var body: some View {
         Card(title: "Set up StudySprint", systemImage: "wand.and.stars", tint: .indigo) {
             Picker("", selection: $app.engineKind) {
-                Text("Free (runs on your Mac)").tag(EngineKind.free)
-                Text("Claude (best results, paid)").tag(EngineKind.claude)
+                ForEach(EngineKind.allCases) { Text($0.shortTitle).tag($0) }
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            .frame(maxWidth: 460)
+            .frame(maxWidth: 520)
 
             switch app.engineKind {
             case .free: FreeSetupSteps(ollama: ollama)
+            case .plan: PlanSetupSteps(claudeCode: claudeCode)
             case .claude: ClaudeKeyForm()
             }
 
@@ -82,6 +83,77 @@ struct FreeSetupSteps: View {
         }
         .onAppear { ollama.startWatching() }
         .onDisappear { ollama.stopWatching() }
+    }
+}
+
+/// Claude plan mode: StudySprint drives Claude Code (`claude -p`), logged in with the person's
+/// Claude account, so it uses plan usage and never API credit.
+struct PlanSetupSteps: View {
+    @ObservedObject var claudeCode: ClaudeCodeManager
+    var showModelPicker = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Uses your **Claude Pro or Max plan** through **Claude Code**, Anthropic's official app. Guides count toward your plan's usage limits — no API key, no credit, no extra charges. You get Claude's full quality, including live web research.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            SetupStep(number: 1, done: claudeCode.isInstalled, title: "Install Claude Code (free download)") {
+                if !claudeCode.isInstalled {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Button("Install in Terminal") { claudeCode.installInTerminal() }
+                                .buttonStyle(.borderedProminent).tint(.indigo)
+                            Button("Copy command") { claudeCode.copyInstallCommand() }
+                        }
+                        Text("Runs Anthropic's official installer: `\(ClaudeCodeManager.installCommand)`")
+                            .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                    }
+                } else if let v = claudeCode.install?.version {
+                    Text(v).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+
+            SetupStep(number: 2, done: claudeCode.isReady, title: "Log in with your Claude account") {
+                if claudeCode.isInstalled && !claudeCode.isReady {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Button("Log in") { claudeCode.loginInTerminal() }
+                            .buttonStyle(.borderedProminent).tint(.indigo)
+                        if claudeCode.auth?.loggedIn == true {
+                            Text("Claude Code is logged in with an API key, which would cost money. Log in again and choose your Claude account (Pro/Max) instead.")
+                                .font(.caption).foregroundStyle(.orange)
+                                .fixedSize(horizontal: false, vertical: true)
+                        } else {
+                            Text("Terminal opens; choose your Claude account (Pro or Max) in the browser. This page updates by itself.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+
+            if claudeCode.isReady {
+                Label("Ready! Guides use your Claude plan — never API credit.", systemImage: "checkmark.seal.fill")
+                    .foregroundStyle(.green)
+                    .font(.headline)
+            }
+
+            if claudeCode.isReady || showModelPicker {
+                Picker("Model", selection: $claudeCode.model) {
+                    ForEach(ClaudeCodeRunner.Model.allCases) { Text($0.label).tag($0) }
+                }
+                .frame(maxWidth: 460)
+            }
+
+            HStack {
+                Button("Check again") { Task { await claudeCode.refresh() } }
+                    .disabled(claudeCode.checking)
+                if claudeCode.checking { ProgressView().controlSize(.small) }
+            }
+            .font(.caption)
+        }
+        .onAppear { claudeCode.startWatching() }
+        .onDisappear { claudeCode.stopWatching() }
     }
 }
 

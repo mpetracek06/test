@@ -25,7 +25,8 @@ let package = Package(
         .testTarget(
             name: "StudySprintCoreTests",
             dependencies: ["StudySprintCore"],
-            path: "Tests/StudySprintCoreTests"
+            path: "Tests/StudySprintCoreTests",
+            resources: [.copy("Fixtures")]
         ),
     ]
 )

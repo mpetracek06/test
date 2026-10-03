@@ -6,7 +6,7 @@ struct NewGuideView: View {
     @EnvironmentObject private var app: AppModel
 
     var body: some View {
-        NewGuideContent(generation: app.generation, ollama: app.ollama)
+        NewGuideContent(generation: app.generation, ollama: app.ollama, claudeCode: app.claudeCode)
     }
 }
 
@@ -14,6 +14,7 @@ private struct NewGuideContent: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject var generation: GenerationController
     @ObservedObject var ollama: OllamaManager
+    @ObservedObject var claudeCode: ClaudeCodeManager
 
     @AppStorage("draftNotes") private var notes = ""
     @State private var topic = ""
@@ -36,7 +37,7 @@ private struct NewGuideContent: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     header
-                    if !app.engineReady { EngineSetupCard(ollama: ollama) }
+                    if !app.engineReady { EngineSetupCard(ollama: ollama, claudeCode: claudeCode) }
                     if let error = generation.error {
                         ErrorBanner(message: error) { generation.error = nil }
                     }
@@ -157,7 +158,7 @@ private struct NewGuideContent: View {
                     }
                     .pickerStyle(.segmented).labelsHidden()
                 }
-                if app.engineKind == .claude {
+                if app.engineKind != .free {
                 GridRow {
                     Text("Research").foregroundStyle(.secondary)
                     HStack {

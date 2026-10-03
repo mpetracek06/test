@@ -3,7 +3,16 @@ import Foundation
 enum Prompts {
     // MARK: Guide generation
 
-    static let guideSystem = """
+    static let guideSystem = guideSystemCore + guideOutputTagged
+
+    /// For Claude Code (`claude -p --json-schema`): the guide comes back as structured output.
+    static let guideSystemStructured = guideSystemCore + """
+    When you are done researching, return the finished guide as your structured output. \
+    "prerequisites" lists the 1-based numbers of earlier steps that each step builds on ([] for none). \
+    For videos, use only URLs that appeared in your web search results.
+    """
+
+    static let guideSystemCore = """
     You are an elite learning coach. Your single priority: get the learner to real mastery of their \
     material in the LEAST possible time. Every minute in the plan must earn its place.
 
@@ -40,6 +49,10 @@ enum Prompts {
 
     While you research, keep any progress notes to one short sentence.
 
+
+    """
+
+    static let guideOutputTagged = """
     When you are done researching, output the final guide as a single JSON object wrapped in \
     <guide_json></guide_json> tags, with nothing after the closing tag. Use exactly this shape:
     {
