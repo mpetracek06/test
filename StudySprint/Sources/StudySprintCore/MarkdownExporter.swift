@@ -6,6 +6,11 @@ public enum MarkdownExporter {
         md += "**TL;DR:** \(g.tldr)\n\n"
         md += "## The 20% that gets you 80%\n"
         g.paretoConcepts.forEach { md += "- \($0)\n" }
+        let general = g.figures(forStep: 0)
+        if !general.isEmpty {
+            md += "\n## Figures from your notes\n"
+            general.forEach { md += figureMarkdown($0) }
+        }
         md += "\n## Learning path\n"
         for (i, s) in g.steps.enumerated() {
             let mark = includeProgress ? (s.status == .done ? " ✅" : s.status == .testedOut ? " ⏭️ tested out" : "") : ""
@@ -27,6 +32,7 @@ public enum MarkdownExporter {
                     md += "- [\(v.title)](\(v.url)) — \(v.channel), \(v.duration).\(segment)\(speed) \(v.watchTip)\n"
                 }
             }
+            for f in g.figures(forStep: i + 1) { md += "\n" + figureMarkdown(f) }
             if !s.activeRecall.isEmpty {
                 md += "\n**Recall check**\n"
                 s.activeRecall.forEach { md += "- \($0)\n" }
@@ -46,6 +52,16 @@ public enum MarkdownExporter {
             md += "\n## Flashcards\n"
             g.flashcards.forEach { md += "- **Q:** \($0.front)  \n  **A:** \($0.back)\n" }
         }
+        return md
+    }
+}
+
+extension MarkdownExporter {
+    static func figureMarkdown(_ f: GuideFigure) -> String {
+        var md = "**Figure — \(f.title)**"
+        if !f.explanation.isEmpty { md += ": \(f.explanation)" }
+        md += "\n"
+        f.notice.forEach { md += "- Notice: \($0)\n" }
         return md
     }
 }

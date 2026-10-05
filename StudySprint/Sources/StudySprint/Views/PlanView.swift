@@ -28,9 +28,19 @@ struct PlanView: View {
                 }
                 .padding(.top, 4)
 
+                let general = numberedFigures(forStep: 0)
+                if !general.isEmpty {
+                    Card(title: "Figures from your notes", systemImage: "photo.on.rectangle.angled", tint: .indigo) {
+                        VStack(alignment: .leading, spacing: 12) {
+                            ForEach(general, id: \.figure.id) { FigureCard(figure: $0.figure, number: $0.number) }
+                        }
+                    }
+                }
+
                 ForEach(guide.steps.indices, id: \.self) { i in
                     StepCard(step: $guide.steps[i], number: i + 1,
                              isNext: guide.nextStepIndex == i,
+                             figures: numberedFigures(forStep: i + 1),
                              onPlay: { playing = $0 })
                 }
 
@@ -85,6 +95,24 @@ struct PlanView: View {
     }
 }
 
+/// A figure plus its number in the guide ("Figure 3").
+struct NumberedFigure {
+    let number: Int
+    let figure: GuideFigure
+}
+
+extension StudyGuide {
+    func numberedFigures(forStep step: Int) -> [NumberedFigure] {
+        figures.enumerated()
+            .filter { $0.element.stepNumber == step }
+            .map { NumberedFigure(number: $0.offset + 1, figure: $0.element) }
+    }
+}
+
+extension PlanView {
+    func numberedFigures(forStep step: Int) -> [NumberedFigure] { guide.numberedFigures(forStep: step) }
+}
+
 // MARK: - Step
 
 struct StepCard: View {
@@ -92,6 +120,7 @@ struct StepCard: View {
     @Binding var step: StudyStep
     let number: Int
     var isNext = false
+    var figures: [NumberedFigure] = []
     var onPlay: (VideoResource) -> Void
     @State private var expanded: Bool?
 
@@ -169,6 +198,8 @@ struct StepCard: View {
                     if !step.keyPoints.isEmpty {
                         BulletList(items: step.keyPoints)
                     }
+
+                    ForEach(figures, id: \.figure.id) { FigureCard(figure: $0.figure, number: $0.number) }
 
                     if !step.videos.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {

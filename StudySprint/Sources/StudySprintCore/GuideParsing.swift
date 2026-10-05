@@ -53,13 +53,31 @@ struct GuidePayload: Decodable {
 
     struct Card: Decodable { var front, back: String }
 
+    struct Figure: Decodable {
+        var figureNumber: Int
+        var title, explanation: String
+        var whatToNotice: [String]
+        var stepNumber: Int
+
+        enum CodingKeys: String, CodingKey { case figureNumber, title, explanation, whatToNotice, stepNumber }
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            figureNumber = c.value(.figureNumber, 0)
+            title = c.value(.title, "")
+            explanation = c.value(.explanation, "")
+            whatToNotice = c.value(.whatToNotice, [])
+            stepNumber = c.value(.stepNumber, 0)
+        }
+    }
+
     var topic, emoji, tldr: String
     var paretoConcepts, commonMistakes, skipList, mnemonics, selfTest: [String]
     var steps: [Step]
     var flashcards: [Card]
+    var figures: [Figure]
 
     enum CodingKeys: String, CodingKey {
-        case topic, emoji, tldr, paretoConcepts, steps, flashcards, commonMistakes, skipList, mnemonics, selfTest
+        case topic, emoji, tldr, paretoConcepts, steps, flashcards, commonMistakes, skipList, mnemonics, selfTest, figures
     }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -73,6 +91,7 @@ struct GuidePayload: Decodable {
         skipList = c.value(.skipList, [])
         mnemonics = c.value(.mnemonics, [])
         selfTest = c.value(.selfTest, [])
+        figures = c.value(.figures, [])
     }
 
     func toGuide(request: GuideRequest, searchHits: [SearchHit]) -> StudyGuide {
@@ -101,7 +120,20 @@ struct GuidePayload: Decodable {
         var seen = Set<String>()
         let uniqueHits = searchHits.filter { seen.insert($0.url).inserted }
 
-        return StudyGuide(
+        // Every picture from the notes is shown, with Claude's explanation when it gave one.
+        let figureAttachments = request.attachments.filter(\.isFigure)
+        let builtFigures = figureAttachments.enumerated().map { index, attachment -> GuideFigure in
+            let explained = figures.first { $0.figureNumber == index + 1 }
+            let step = explained?.stepNumber ?? 0
+            return GuideFigure(
+                title: explained.map { $0.title.isEmpty ? "Figure \(index + 1)" : $0.title } ?? "Figure \(index + 1)",
+                explanation: explained?.explanation ?? "",
+                notice: explained?.whatToNotice ?? [],
+                stepNumber: (0...builtSteps.count).contains(step) ? step : 0,
+                sourceIndex: index)
+        }
+
+        var guide = StudyGuide(
             topic: topic,
             emoji: emoji.isEmpty ? "📘" : String(emoji.prefix(1)),
             timeBudgetMinutes: request.budget.rawValue,
@@ -117,6 +149,8 @@ struct GuidePayload: Decodable {
                 : request.notes + "\n\n[\(request.attachments.count) attached: \(request.attachments.map(\.name).joined(separator: ", "))]",
             sources: uniqueHits
         )
+        guide.figures = builtFigures
+        return guide
     }
 
     /// Finds the guide JSON in Claude's answer: between <guide_json> tags if present,
@@ -160,7 +194,11 @@ struct GuidePayload: Decodable {
             stepProps["videos"] = ["type": "array", "items": video] as JSON
         }
         let step = obj(stepProps)
+        let figure = obj([
+            "figureNumber": int, "title": str, "explanation": str, "whatToNotice": strs, "stepNumber": int,
+        ])
         return obj([
+            "figures": ["type": "array", "items": figure] as JSON,
             "topic": str, "emoji": str, "tldr": str, "paretoConcepts": strs,
             "steps": ["type": "array", "items": step] as JSON,
             "flashcards": ["type": "array", "items": obj(["front": str, "back": str])] as JSON,

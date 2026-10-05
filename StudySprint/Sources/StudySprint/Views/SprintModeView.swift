@@ -173,6 +173,10 @@ struct SprintModeView: View {
                             BulletList(items: step.keyPoints, bullet: "●", color: .indigo)
                         }
                     }
+
+                    ForEach(guide.numberedFigures(forStep: index + 1), id: \.figure.id) {
+                        FigureCard(figure: $0.figure, number: $0.number, compact: true)
+                    }
                 }
                 .padding(24)
             }

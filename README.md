@@ -22,6 +22,7 @@
 | ✅ **Adaptive quizzes** | Fresh multiple-choice questions each time. Results show your weak steps, and one click hands them to the tutor to fix. |
 | 🧑‍🏫 **Feynman mode** | Explain a concept in your own words; get a score, what you nailed, your gaps and misconceptions, and a tighter version. |
 | 🧠 **Spaced repetition** | Flashcards scheduled with SM-2 across all your guides, a daily streak, a cram mode, and a menu-bar counter of cards due. |
+| 🖼️ **Pictures in your notes, explained** | Diagrams, charts and photos inside your Word, PowerPoint and PDF files are pulled out, shown in the guide at the step where they help, and explained: what the picture shows, how to read it, and what to look for. Click any picture to enlarge it. |
 | 📸 **Photos of notes** | Drop or paste photos of handwritten notes, or scanned PDFs. Claude reads them directly, diagrams included. |
 | 🆘 **"Stuck?" buttons** | One click on any step: explain it simpler, give another example, explain why it matters, or quiz me. |
 | 🔔 **Review reminders** | A notification when flashcards come due, so the spacing actually happens. |

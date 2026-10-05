@@ -23,7 +23,8 @@ public struct LocalEngine: StudyEngine {
         _ request: GuideRequest,
         onEvent: @escaping @MainActor (ResearchEvent) -> Void
     ) async throws -> StudyGuide {
-        let images = request.attachments.filter { $0.kind == .image }.map(\.data)
+        var images = request.attachments.filter { $0.kind == .image }.map(\.data)
+        let figureAttachments = request.attachments.filter(\.isFigure)
         let counter = Counter()
         let progress: @MainActor (String) -> Void = { text in
             counter.characters += text.count
@@ -36,10 +37,21 @@ public struct LocalEngine: StudyEngine {
         // Pass 1: outline.
         await onEvent(.phase("Planning the outline with \(backend.modelName) on your Mac…"))
         await onEvent(.note("Free mode: everything runs locally. The first run can take a minute while the model loads."))
-        let outlineReply = try await backend.chat(
-            system: Prompts.localOutlineSystem,
-            messages: [LocalMessage(role: "user", content: Prompts.guideUser(request), images: images)],
-            schema: LocalSchemas.outline, onText: progress)
+        let outlineReply: String
+        do {
+            outlineReply = try await backend.chat(
+                system: Prompts.localOutlineSystem,
+                messages: [LocalMessage(role: "user", content: Prompts.guideUser(request), images: images)],
+                schema: LocalSchemas.outline, onText: progress)
+        } catch LocalModelError.server(let message) where !images.isEmpty {
+            // Text-only models reject pictures: carry on without them.
+            await onEvent(.note("\(backend.modelName) can't see pictures (\(message)). Continuing with the text; pick Gemma 3 in Settings to have pictures explained."))
+            images = []
+            outlineReply = try await backend.chat(
+                system: Prompts.localOutlineSystem,
+                messages: [LocalMessage(role: "user", content: Prompts.guideUser(request))],
+                schema: LocalSchemas.outline, onText: progress)
+        }
         guard let outline = LocalEngine.parseJSONObject(outlineReply),
               let outlineSteps = outline["steps"] as? [JSON], !outlineSteps.isEmpty else {
             throw APIError.unparseable
@@ -65,6 +77,23 @@ public struct LocalEngine: StudyEngine {
             steps.append(step)
         }
 
+        // Pass 2b: explain each picture from the notes (vision models only).
+        var figures: [JSON] = []
+        if !images.isEmpty {
+            for (i, figure) in figureAttachments.prefix(FigureLimits.local).enumerated() {
+                try Task.checkCancellation()
+                await onEvent(.phase("Explaining picture \(i + 1) of \(min(figureAttachments.count, FigureLimits.local))…"))
+                guard let reply = try? await backend.chat(
+                    system: Prompts.localFigureSystem,
+                    messages: [LocalMessage(role: "user", content: context + "Explain this picture (Figure \(i + 1), from \(figure.name)).",
+                                            images: [figure.data])],
+                    schema: LocalSchemas.figure, onText: progress),
+                      var explained = LocalEngine.parseJSONObject(reply) else { continue }
+                explained["figureNumber"] = i + 1
+                figures.append(explained)
+            }
+        }
+
         // Pass 3: flashcards, traps, self-test.
         try Task.checkCancellation()
         await onEvent(.phase("Making flashcards and a self-test…"))
@@ -76,6 +105,7 @@ public struct LocalEngine: StudyEngine {
 
         var assembled = outline
         assembled["steps"] = steps
+        assembled["figures"] = figures
         for key in ["flashcards", "commonMistakes", "skipList", "mnemonics", "selfTest"] {
             assembled[key] = extras[key] ?? []
         }
@@ -189,6 +219,12 @@ enum LocalSchemas {
         "testOut": obj(["question": str, "answer": str]),
     ])
 
+    static let figure = obj([
+        "title": str, "explanation": str,
+        "whatToNotice": list(str, min: 2, max: 4),
+        "stepNumber": int,
+    ])
+
     static let extras = obj([
         "flashcards": list(obj(["front": str, "back": str]), min: 8, max: 25),
         "commonMistakes": list(str, min: 2, max: 5),
@@ -196,4 +232,9 @@ enum LocalSchemas {
         "skipList": list(str, min: 1, max: 4),
         "selfTest": list(str, min: 3, max: 5),
     ])
+}
+
+enum FigureLimits {
+    /// Pictures explained per guide by a local model (each is its own request).
+    static let local = 10
 }

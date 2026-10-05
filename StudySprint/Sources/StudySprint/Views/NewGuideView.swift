@@ -237,10 +237,16 @@ private struct NewGuideContent: View {
         }
     }
 
+    static let maxFigures = 20
+
     private var attachmentStrip: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Claude will read these directly — handwriting and diagrams included.")
+            let figureCount = attachments.filter(\.isFigure).count
+            Text(figureCount > 0
+                 ? "\(figureCount) picture\(figureCount == 1 ? "" : "s") will be shown in your guide and explained. Right-click a photo of handwritten notes to mark it as a notes page instead."
+                 : "These are read as pages of your notes — handwriting included.")
                 .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
                     ForEach(attachments) { a in
@@ -257,6 +263,19 @@ private struct NewGuideContent: View {
                                 .clipShape(RoundedRectangle(cornerRadius: 8))
                                 .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.05)))
                                 Text(a.name).font(.caption2).lineLimit(1).frame(width: 96)
+                                Text(a.isFigure ? "Picture to explain" : a.kind == .pdf ? "Scanned pages" : "Notes page")
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(a.isFigure ? Color.indigo : Color.secondary)
+                            }
+                            .contextMenu {
+                                if a.kind == .image {
+                                    Button(a.isFigure ? "Treat as a page of notes (read, not shown)" : "Treat as a picture to explain") {
+                                        if let i = attachments.firstIndex(where: { $0.id == a.id }) {
+                                            attachments[i].role = a.isFigure ? .page : .figure
+                                        }
+                                    }
+                                }
+                                Button("Remove", role: .destructive) { attachments.removeAll { $0.id == a.id } }
                             }
                             Button {
                                 withAnimation { attachments.removeAll { $0.id == a.id } }
@@ -277,11 +296,15 @@ private struct NewGuideContent: View {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         do {
-            switch try NotesImporter.load(from: url) {
-            case .text(let text):
-                notes += (notes.isEmpty ? "" : "\n\n") + "# \(url.lastPathComponent)\n" + text
-            case .attachment(let a):
-                withAnimation { attachments.append(a) }
+            for item in try NotesImporter.load(from: url) {
+                switch item {
+                case .text(let text):
+                    guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+                    notes += (notes.isEmpty ? "" : "\n\n") + "# \(url.lastPathComponent)\n" + text
+                case .attachment(let a):
+                    guard attachments.filter(\.isFigure).count < Self.maxFigures || !a.isFigure else { continue }
+                    withAnimation { attachments.append(a) }
+                }
             }
         } catch {
             importError = error.localizedDescription

@@ -46,6 +46,11 @@ enum Prompts {
     6. Tailor to the learner's level and goal. Exam goal: emphasize likely question types and traps. \
     Understanding goal: emphasize intuition and "why". Practice goal: emphasize procedures and worked examples.
     7. Write in the same language as the learner's notes.
+    8. If the notes include pictures (labeled Figure 1, Figure 2, …), explain every one in "figures": \
+    a short title; a plain-language explanation of what it shows and how to read it (axes, labels, \
+    arrows, colors, what the parts mean) and why it matters for the topic; 2–4 specific things to notice; \
+    and the stepNumber where it helps most (0 if it's about the whole topic). Mention figures in step \
+    explanations where they help ("see Figure 2").
 
     While you research, keep any progress notes to one short sentence.
 
@@ -82,20 +87,44 @@ enum Prompts {
       "commonMistakes": ["misconceptions and traps"],
       "mnemonics": ["memory aids, only if genuinely useful"],
       "skipList": ["things that are safe to skip for now, and why"],
-      "selfTest": ["final questions that prove mastery"]
+      "selfTest": ["final questions that prove mastery"],
+      "figures": [{"figureNumber": 1, "title": "short title", "explanation": "what it shows and how to read it", \
+    "whatToNotice": ["specific things to notice"], "stepNumber": 2}]
     }
     "prerequisites" lists the 1-based numbers of earlier steps that this step builds on ([] for none).
     """
 
     /// User turn: any photos / scanned PDFs first, then the instructions and typed notes.
+    /// User turn: pictures and scans first (each labeled), then the instructions and typed notes.
     static func guideUserContent(_ r: GuideRequest) -> [JSON] {
-        var blocks = r.attachments.map(\.contentBlock)
+        var blocks: [JSON] = []
+        var figureNumber = 0
+        for a in r.attachments {
+            if a.isFigure {
+                figureNumber += 1
+                blocks.append(["type": "text", "text": "Figure \(figureNumber) (from \(a.name)):"])
+            } else {
+                blocks.append(["type": "text", "text": "A page of my notes (\(a.name)):"])
+            }
+            blocks.append(a.contentBlock)
+        }
         var text = guideUser(r)
-        if !r.attachments.isEmpty {
-            text += "\n\nI've also attached \(r.attachments.count) photo(s)/scan(s) of my notes above. Read them carefully (including handwriting and diagrams) and treat them as part of my notes."
+        if r.attachments.contains(where: { !$0.isFigure }) {
+            text += "\n\nSome pages of my notes are attached above as photos or scans. Read them carefully, including handwriting, and treat them as part of my notes."
         }
         blocks.append(["type": "text", "text": text])
         return blocks
+    }
+
+    /// Asks for an explanation of every figure, when the notes have any.
+    static func figureInstruction(count: Int) -> String {
+        guard count > 0 else { return "" }
+        return """
+
+
+        My notes include \(count) picture(s), labeled Figure 1\(count > 1 ? "–\(count)" : ""). In "figures", explain \
+        every one of them (figureNumber 1 to \(count)).
+        """
     }
 
     static func guideUser(_ r: GuideRequest) -> String {
@@ -105,7 +134,7 @@ enum Prompts {
         My level: \(r.level.rawValue).
         My goal: \(r.goal.rawValue).
         \(topicLine)
-        Build me the fastest possible study sprint for the material in my notes. Aim for 12–30 flashcards.
+        Build me the fastest possible study sprint for the material in my notes. Aim for 12–30 flashcards.\(figureInstruction(count: r.attachments.filter(\.isFigure).count))
 
         <notes>
         \(r.notes.isEmpty ? "(see attached images)" : r.notes)
@@ -186,6 +215,16 @@ enum Prompts {
     static func localStepInstruction(number: Int, title: String) -> String {
         "Write step \(number): \(title)"
     }
+
+    static let localFigureSystem = """
+    You are an expert teacher explaining a picture from the learner's notes.
+    - title: a short name for what the picture shows.
+    - explanation: what it shows and how to read it (labels, arrows, axes, colors, what each part means), \
+    and why it matters for the topic. 3-6 sentences, plain language.
+    - whatToNotice: 2-4 specific things to look at.
+    - stepNumber: the number of the outline step this picture helps with most (0 if it's about everything).
+    Describe only what is really in the picture. Output only JSON.
+    """
 
     static let localExtrasSystem = """
     You are an expert teacher finishing a study plan.

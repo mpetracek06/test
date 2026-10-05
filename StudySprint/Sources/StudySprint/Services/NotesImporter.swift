@@ -14,34 +14,65 @@ enum NotesImporter {
         .plainText, .text, .pdf, .rtf, .rtfd, .html, .image, .jpeg, .png, .heic,
         UTType(filenameExtension: "md") ?? .plainText,
         UTType(filenameExtension: "docx") ?? .data,
+        UTType(filenameExtension: "pptx") ?? .data,
     ]
 
     static let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "heic", "heif", "gif", "tiff", "tif", "webp", "bmp"]
     private static let maxPDFBytes = 20 * 1024 * 1024
 
-    static func load(from url: URL) throws -> Imported {
+    /// Text plus any pictures in the file. Pictures become figures that the guide shows and explains.
+    static func load(from url: URL) throws -> [Imported] {
         let ext = url.pathExtension.lowercased()
+        let name = url.lastPathComponent
+
         if imageExtensions.contains(ext) {
-            guard let image = NSImage(contentsOf: url), let attachment = attachment(from: image, name: url.lastPathComponent) else {
-                throw ImportError.unreadable(url.lastPathComponent)
+            guard let image = NSImage(contentsOf: url), let attachment = attachment(from: image, name: name) else {
+                throw ImportError.unreadable(name)
             }
-            return .attachment(attachment)
+            return [.attachment(attachment)]
         }
+
         if ext == "pdf" {
-            guard let doc = PDFDocument(url: url) else { throw ImportError.unreadable(url.lastPathComponent) }
+            guard let data = try? Data(contentsOf: url), let doc = PDFDocument(data: data) else { throw ImportError.unreadable(name) }
             let text = doc.string ?? ""
             let perPage = text.count / max(doc.pageCount, 1)
             // Little or no selectable text means a scan or handwriting: let Claude read the pages directly.
-            if perPage < 150, let data = try? Data(contentsOf: url), data.count <= maxPDFBytes {
-                return .attachment(NoteAttachment(kind: .pdf, name: url.lastPathComponent,
-                                                  mediaType: "application/pdf", data: data))
+            if perPage < 150, data.count <= maxPDFBytes {
+                return [.attachment(NoteAttachment(kind: .pdf, name: name, mediaType: "application/pdf", data: data))]
             }
-            return .text(text)
+            return [.text(text)] + FigureExtractor.pdfImages(data, name: name).map(Imported.attachment)
         }
-        if ["rtf", "rtfd", "docx", "doc", "html", "htm", "odt"].contains(ext) {
-            return .text(try NSAttributedString(url: url, options: [:], documentAttributes: nil).string)
+
+        if ext == "pptx" {
+            return [.text(FigureExtractor.pptxText(at: url))] + FigureExtractor.officeImages(at: url).map(Imported.attachment)
         }
-        return .text(try String(contentsOf: url, encoding: .utf8))
+
+        if ext == "docx" {
+            let text = try NSAttributedString(url: url, options: [:], documentAttributes: nil).string
+            return [.text(text)] + FigureExtractor.officeImages(at: url).map(Imported.attachment)
+        }
+
+        if ["rtf", "rtfd", "doc", "html", "htm", "odt"].contains(ext) {
+            let attributed = try NSAttributedString(url: url, options: [:], documentAttributes: nil)
+            return [.text(attributed.string)] + embeddedImages(in: attributed, name: name).map(Imported.attachment)
+        }
+
+        return [.text(try String(contentsOf: url, encoding: .utf8))]
+    }
+
+    /// Pictures embedded in rich text (RTFD, HTML, Word 97).
+    static func embeddedImages(in text: NSAttributedString, name: String) -> [NoteAttachment] {
+        var out: [NoteAttachment] = []
+        text.enumerateAttribute(.attachment, in: NSRange(location: 0, length: text.length)) { value, _, stop in
+            guard let attachment = value as? NSTextAttachment else { return }
+            let image = attachment.image
+                ?? attachment.fileWrapper?.regularFileContents.flatMap(NSImage.init(data:))
+            guard let image, image.size.width >= 120, image.size.height >= 120,
+                  let figure = Self.attachment(from: image, name: "\(name) · picture \(out.count + 1)") else { return }
+            out.append(figure)
+            if out.count >= FigureExtractor.maxFigures { stop.pointee = true }
+        }
+        return out
     }
 
     /// Renders the first pages of a PDF as JPEG images (for models that read images but not PDFs).
@@ -52,12 +83,12 @@ enum NotesImporter {
             let bounds = page.bounds(for: .mediaBox)
             let scale = 1400 / max(bounds.width, bounds.height)
             let image = page.thumbnail(of: NSSize(width: bounds.width * scale, height: bounds.height * scale), for: .mediaBox)
-            return attachment(from: image, name: "\(name) p\(i + 1)")
+            return attachment(from: image, name: "\(name) p\(i + 1)", role: .page)
         }
     }
 
     /// Downscales to the size Claude actually uses (long edge 1568px) and re-encodes as JPEG.
-    static func attachment(from image: NSImage, name: String) -> NoteAttachment? {
+    static func attachment(from image: NSImage, name: String, role: NoteAttachment.Role = .figure) -> NoteAttachment? {
         guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
         let longEdge = CGFloat(max(cg.width, cg.height))
         let scale = min(1, 1568 / longEdge)
@@ -72,7 +103,7 @@ enum NotesImporter {
         guard let scaled = ctx.makeImage(),
               let data = NSBitmapImageRep(cgImage: scaled).representation(using: .jpeg, properties: [.compressionFactor: 0.85])
         else { return nil }
-        return NoteAttachment(kind: .image, name: name, mediaType: "image/jpeg", data: data)
+        return NoteAttachment(kind: .image, role: role, name: name, mediaType: "image/jpeg", data: data)
     }
 
     enum ImportError: LocalizedError {

@@ -324,6 +324,10 @@ private struct PassBackend: ChatBackend {
              "activeRecall": ["q1", "q2"], "testOut": {"question": "tq", "answer": "ta"}}
             """
         }
+        if props["whatToNotice"] != nil {
+            XCTAssertEqual(messages.last?.images.count, 1, "each picture gets its own pass")
+            return #"{"title": "Light reactions diagram", "explanation": "Shows the thylakoid.", "whatToNotice": ["arrows", "labels"], "stepNumber": 1}"#
+        }
         if props["flashcards"] != nil {
             return """
             {"flashcards": [{"front": "f", "back": "b"}], "commonMistakes": ["m"], "mnemonics": [],
@@ -515,5 +519,96 @@ final class ClaudeCodeTests: XCTestCase {
         } catch {
             XCTAssertEqual(error as? ClaudeCodeError, .notInstalled)
         }
+    }
+}
+
+
+// MARK: - Pictures in notes
+
+final class FigureTests: XCTestCase {
+    private func fixture(_ name: String) throws -> URL {
+        let parts = name.split(separator: ".")
+        return try XCTUnwrap(Bundle.module.url(forResource: String(parts[0]), withExtension: String(parts[1]), subdirectory: "Fixtures"))
+    }
+
+    func testExtractsPicturesFromWordInOrderAndSkipsIcons() throws {
+        let figures = FigureExtractor.officeImages(at: try fixture("figures.docx"))
+        XCTAssertEqual(figures.count, 2, "the 24px icon is skipped")
+        XCTAssertTrue(figures.allSatisfy { $0.isFigure && $0.mediaType == "image/jpeg" })
+        XCTAssertEqual(figures.first?.name, "figures.docx · picture 1")
+        // image1 (320 wide) comes before image2 (240 wide) despite zip order.
+        let first = try XCTUnwrap(FigureExtractor.cgImage(from: figures[0].data))
+        XCTAssertEqual(first.width, 320)
+    }
+
+    func testExtractsPowerPointTextAndPictures() throws {
+        let url = try fixture("slides.pptx")
+        XCTAssertEqual(FigureExtractor.officeImages(at: url).count, 1)
+        let text = FigureExtractor.pptxText(at: url)
+        XCTAssertEqual(text, "Slide 1: Osmosis & water moves to high solute\nSlide 2: Second slide: diffusion\nSlide 3: Tenth")
+    }
+
+    func testExtractsPicturesEmbeddedInPDF() throws {
+        let data = try Data(contentsOf: try fixture("lecture.pdf"))
+        let figures = FigureExtractor.pdfImages(data, name: "lecture.pdf")
+        XCTAssertEqual(figures.count, 1)
+        let image = try XCTUnwrap(FigureExtractor.cgImage(from: figures[0].data))
+        XCTAssertEqual(image.width, 200)
+        XCTAssertEqual(image.height, 150)
+        XCTAssertEqual(figures[0].name, "lecture.pdf · page 1 picture")
+    }
+
+    func testPromptLabelsFiguresAndAsksForExplanations() {
+        var r = GuideRequest(notes: "n")
+        r.attachments = [NoteAttachment(kind: .image, name: "a.docx · picture 1", mediaType: "image/jpeg", data: Data([1])),
+                         NoteAttachment(kind: .image, role: .page, name: "page.jpg", mediaType: "image/jpeg", data: Data([2])),
+                         NoteAttachment(kind: .image, name: "b.pdf · page 2 picture", mediaType: "image/jpeg", data: Data([3]))]
+        let blocks = Prompts.guideUserContent(r)
+        let labels = blocks.compactMap { $0["type"] as? String == "text" ? $0["text"] as? String : nil }
+        XCTAssertEqual(labels[0], "Figure 1 (from a.docx · picture 1):")
+        XCTAssertEqual(labels[1], "A page of my notes (page.jpg):")
+        XCTAssertEqual(labels[2], "Figure 2 (from b.pdf · page 2 picture):")
+        XCTAssertTrue(labels[3].contains("labeled Figure 1–2"))
+        XCTAssertEqual(blocks.filter { $0["type"] as? String == "image" }.count, 3)
+    }
+
+    func testGuideKeepsEveryFigureWithExplanations() throws {
+        let json = #"""
+        {"topic": "T", "steps": [{"title": "S1"}, {"title": "S2"}],
+         "figures": [{"figureNumber": 2, "title": "Graph", "explanation": "Rises then falls.", "whatToNotice": ["peak"], "stepNumber": 2},
+                     {"figureNumber": 9, "title": "Ghost", "explanation": "no such figure", "whatToNotice": [], "stepNumber": 1}]}
+        """#
+        var r = GuideRequest(notes: "n")
+        r.attachments = [NoteAttachment(kind: .image, name: "p1", mediaType: "image/jpeg", data: Data([1])),
+                         NoteAttachment(kind: .image, name: "p2", mediaType: "image/jpeg", data: Data([2]))]
+        let guide = try XCTUnwrap(GuidePayload.decode(from: json)).toGuide(request: r, searchHits: [])
+        XCTAssertEqual(guide.figures.count, 2, "one per picture, ignoring explanations for pictures that don't exist")
+        XCTAssertEqual(guide.figures[0].title, "Figure 1", "unexplained pictures still show")
+        XCTAssertEqual(guide.figures[0].stepNumber, 0)
+        XCTAssertEqual(guide.figures[1].title, "Graph")
+        XCTAssertEqual(guide.figures[1].sourceIndex, 1)
+        XCTAssertEqual(guide.figures(forStep: 2).map(\.title), ["Graph"])
+        XCTAssertTrue(guide.figures[1].fileName.hasSuffix(".jpg"))
+        XCTAssertTrue(MarkdownExporter.markdown(for: guide).contains("**Figure — Graph**: Rises then falls."))
+
+        // Survives saving and loading.
+        let again = try JSONDecoder().decode(StudyGuide.self, from: JSONEncoder().encode(guide))
+        XCTAssertEqual(again.figures, guide.figures)
+    }
+
+    func testSchemaAsksForFigures() {
+        let props = GuidePayload.schema["properties"] as? JSON
+        XCTAssertNotNil(props?["figures"])
+    }
+
+    @MainActor
+    func testFreeModeExplainsEachPicture() async throws {
+        var r = GuideRequest(notes: "photosynthesis")
+        r.attachments = [NoteAttachment(kind: .image, name: "diagram", mediaType: "image/jpeg", data: Data([9]))]
+        let guide = try await LocalEngine(backend: PassBackend(), videos: FakeVideos()).generateGuide(r) { _ in }
+        XCTAssertEqual(guide.figures.count, 1)
+        XCTAssertEqual(guide.figures[0].title, "Light reactions diagram")
+        XCTAssertEqual(guide.figures[0].notice, ["arrows", "labels"])
+        XCTAssertEqual(guide.figures[0].stepNumber, 1)
     }
 }

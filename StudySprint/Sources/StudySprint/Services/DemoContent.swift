@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import StudySprintCore
 
@@ -128,7 +129,80 @@ enum DemoContent {
             sources: []
         )
         g.createdAt = Date()
+        g.figures = [GuideFigure(
+            title: "Where each stage happens",
+            explanation: "A cell with one **mitochondrion** enlarged. **Glycolysis** runs out in the cytoplasm. Pyruvate then crosses into the mitochondrion: the **Krebs cycle** turns in the fluid-filled **matrix**, and the **electron transport chain** sits in the folded **inner membrane** (the folds, called cristae, give it more room for ATP synthase).",
+            notice: ["The arrows follow one glucose molecule through the three stages",
+                     "Krebs (matrix) and the ETC (inner membrane) are different parts of the mitochondrion",
+                     "CO₂ leaves from the Krebs cycle; O₂ is used at the ETC"],
+            stepNumber: 3, sourceIndex: 0)]
         return g
+    }
+
+    /// Writes the demo figure's picture so the guide can show it.
+    static func saveFigures(for guide: StudyGuide) {
+        guard let figure = guide.figures.first,
+              let data = NotesImporter.attachment(from: diagram(), name: "demo")?.data else { return }
+        FigureStore.save(data, for: figure)
+    }
+
+    /// A simple labeled diagram of cellular respiration, drawn in code.
+    static func diagram() -> NSImage {
+        NSImage(size: NSSize(width: 900, height: 520), flipped: true) { rect in
+            NSColor.white.setFill()
+            rect.fill()
+            func label(_ text: String, _ point: NSPoint, size: CGFloat = 22, bold: Bool = false, color: NSColor = .black) {
+                let font = bold ? NSFont.boldSystemFont(ofSize: size) : NSFont.systemFont(ofSize: size)
+                (text as NSString).draw(at: point, withAttributes: [.font: font, .foregroundColor: color])
+            }
+            func arrow(from a: NSPoint, to b: NSPoint) {
+                let path = NSBezierPath()
+                path.move(to: a)
+                path.line(to: b)
+                path.lineWidth = 4
+                NSColor.darkGray.setStroke()
+                path.stroke()
+                let angle = atan2(b.y - a.y, b.x - a.x)
+                let head = NSBezierPath()
+                head.move(to: b)
+                head.line(to: NSPoint(x: b.x - 18 * cos(angle - 0.4), y: b.y - 18 * sin(angle - 0.4)))
+                head.line(to: NSPoint(x: b.x - 18 * cos(angle + 0.4), y: b.y - 18 * sin(angle + 0.4)))
+                head.close()
+                NSColor.darkGray.setFill()
+                head.fill()
+            }
+            // Cell
+            let cell = NSBezierPath(roundedRect: NSRect(x: 20, y: 20, width: 860, height: 480), xRadius: 60, yRadius: 60)
+            NSColor(calibratedRed: 0.93, green: 0.96, blue: 1, alpha: 1).setFill()
+            cell.fill()
+            NSColor(calibratedRed: 0.4, green: 0.55, blue: 0.85, alpha: 1).setStroke()
+            cell.lineWidth = 4
+            cell.stroke()
+            label("CYTOPLASM", NSPoint(x: 60, y: 45), size: 18, bold: true, color: .systemBlue)
+            label("1. Glycolysis", NSPoint(x: 60, y: 120), size: 26, bold: true)
+            label("glucose → 2 pyruvate", NSPoint(x: 60, y: 156))
+            label("net 2 ATP", NSPoint(x: 60, y: 186), color: .darkGray)
+            arrow(from: NSPoint(x: 300, y: 170), to: NSPoint(x: 400, y: 240))
+            // Mitochondrion
+            let outer = NSBezierPath(ovalIn: NSRect(x: 380, y: 140, width: 470, height: 330))
+            NSColor(calibratedRed: 1, green: 0.93, blue: 0.86, alpha: 1).setFill()
+            outer.fill()
+            NSColor.systemOrange.setStroke()
+            outer.lineWidth = 5
+            outer.stroke()
+            let inner = NSBezierPath(ovalIn: NSRect(x: 415, y: 175, width: 400, height: 260))
+            inner.lineWidth = 4
+            let dash: [CGFloat] = [18, 8]
+            inner.setLineDash(dash, count: 2, phase: 0)
+            NSColor.systemRed.setStroke()
+            inner.stroke()
+            label("MITOCHONDRION", NSPoint(x: 520, y: 100), size: 18, bold: true, color: .systemOrange)
+            label("2. Krebs cycle", NSPoint(x: 520, y: 250), size: 26, bold: true)
+            label("in the matrix · releases CO₂", NSPoint(x: 490, y: 286))
+            label("3. Electron transport chain", NSPoint(x: 455, y: 340), size: 22, bold: true, color: .systemRed)
+            label("on the inner membrane · uses O₂ · ~28 ATP", NSPoint(x: 430, y: 372), size: 18, color: .systemRed)
+            return true
+        }
     }
 
     static func quiz() -> [QuizQuestion] {

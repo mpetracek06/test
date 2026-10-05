@@ -378,8 +378,7 @@ public struct ClaudeCodeEngine: StudyEngine {
         onEvent: @escaping @MainActor (ResearchEvent) -> Void
     ) async throws -> StudyGuide {
         await onEvent(.phase("Starting Claude on your plan…"))
-        var content = request.attachments.map(\.contentBlock)
-        content.append(["type": "text", "text": Prompts.guideUser(request)])
+        let content = Prompts.guideUserContent(request)
         let counter = Counter()
         let output = try await requireRunner().run(
             system: Prompts.guideSystemStructured, content: content,

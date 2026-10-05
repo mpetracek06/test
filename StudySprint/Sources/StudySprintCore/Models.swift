@@ -67,18 +67,25 @@ public enum ResearchDepth: String, CaseIterable, Identifiable, Codable, Sendable
 /// A photo of handwritten notes or a scanned PDF, sent to Claude as-is (Claude reads images and PDFs).
 public struct NoteAttachment: Sendable, Hashable, Identifiable {
     public enum Kind: String, Sendable { case image, pdf }
+    /// A figure is a picture from the notes that the guide shows and explains.
+    /// A page is a photo or scan of the notes themselves, which is read but not shown.
+    public enum Role: String, Sendable { case figure, page }
     public var id = UUID()
     public var kind: Kind
+    public var role: Role
     public var name: String
     public var mediaType: String
     public var data: Data
 
-    public init(kind: Kind, name: String, mediaType: String, data: Data) {
+    public init(kind: Kind, role: Role = .figure, name: String, mediaType: String, data: Data) {
         self.kind = kind
+        self.role = kind == .pdf ? .page : role
         self.name = name
         self.mediaType = mediaType
         self.data = data
     }
+
+    public var isFigure: Bool { kind == .image && role == .figure }
 
     /// The Messages API content block for this attachment.
     public var contentBlock: JSON {
@@ -279,6 +286,31 @@ public struct FeynmanResult: Codable, Hashable, Identifiable, Sendable {
     }
 }
 
+/// A picture from the learner's notes, shown in the guide with an explanation.
+/// The image itself is stored by the app as a file named `fileName`.
+public struct GuideFigure: Codable, Hashable, Identifiable, Sendable {
+    public var id = UUID()
+    public var fileName: String
+    public var title: String
+    public var explanation: String
+    public var notice: [String]
+    /// 1-based step it belongs to; 0 = the whole topic.
+    public var stepNumber: Int
+    /// Index among the request's figure attachments (used once, to save the image).
+    public var sourceIndex: Int
+
+    public init(title: String, explanation: String, notice: [String], stepNumber: Int, sourceIndex: Int) {
+        self.title = title
+        self.explanation = explanation
+        self.notice = notice
+        self.stepNumber = stepNumber
+        self.sourceIndex = sourceIndex
+        let newID = UUID()
+        self.id = newID
+        self.fileName = "\(newID.uuidString).jpg"
+    }
+}
+
 public struct StudyGuide: Codable, Hashable, Identifiable, Sendable {
     public var id = UUID()
     public var createdAt = Date()
@@ -295,6 +327,7 @@ public struct StudyGuide: Codable, Hashable, Identifiable, Sendable {
     public var selfTest: [String]
     public var sourceNotes: String
     public var sources: [SearchHit]
+    public var figures: [GuideFigure] = []
 
     // Learning history
     public var tutorTurns: [ChatTurn] = []
@@ -334,6 +367,11 @@ public struct StudyGuide: Codable, Hashable, Identifiable, Sendable {
     public var remainingMinutes: Int {
         steps.filter { !$0.status.isComplete }.reduce(0) { $0 + $1.minutes }
     }
+    /// Figures for a 1-based step number (0 = general).
+    public func figures(forStep number: Int) -> [GuideFigure] {
+        figures.filter { $0.stepNumber == number }
+    }
+
     public func dueCards(at date: Date = Date()) -> [Flashcard] {
         flashcards.filter { $0.review.due <= date }
     }
@@ -420,7 +458,7 @@ extension StudyGuide {
     enum CodingKeys: String, CodingKey {
         case id, createdAt, topic, emoji, timeBudgetMinutes, tldr, paretoConcepts, steps, flashcards,
              commonMistakes, skipList, mnemonics, selfTest, sourceNotes, sources, tutorTurns, tutorSystem,
-             quizAttempts, feynmanResults, minutesStudied, buildCost
+             quizAttempts, feynmanResults, minutesStudied, buildCost, figures
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -439,5 +477,6 @@ extension StudyGuide {
         feynmanResults = c.value(.feynmanResults, [])
         minutesStudied = c.value(.minutesStudied, 0)
         buildCost = c.value(.buildCost, nil)
+        figures = c.value(.figures, [])
     }
 }

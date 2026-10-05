@@ -113,6 +113,7 @@ final class AppModel: ObservableObject {
     /// Adds the built-in sample sprint so people can explore without an API key.
     func loadDemo() {
         let demo = DemoContent.guide()
+        DemoContent.saveFigures(for: demo)
         add(demo)
         open(demo.id)
     }
@@ -186,6 +187,7 @@ final class AppModel: ObservableObject {
 
     func delete(_ id: UUID) {
         if selection == .guide(id) { selection = .newGuide }
+        if let figures = guide(id)?.figures { FigureStore.delete(figures) }
         guides.removeAll { $0.id == id }
         scheduleSave()
     }
@@ -272,6 +274,7 @@ final class AppModel: ObservableObject {
         hasAPIKey = true
         engineKind = screen == "setup" ? .free : screen == "plansetup" ? .plan : .claude
         var g = DemoContent.guide()
+        DemoContent.saveFigures(for: g)
         g.steps[0].status = .done
         g.steps[1].status = .testedOut
         g.minutesStudied = 23
@@ -368,6 +371,7 @@ final class GenerationController: ObservableObject {
         task = Task { @MainActor [weak self] in
             do {
                 let guide = try await engine.generateGuide(request) { event in self?.apply(event) }
+                FigureStore.save(guide, from: request.attachments)
                 guard let self, let app = self.app else { return }
                 app.add(guide)
                 app.open(guide.id)
