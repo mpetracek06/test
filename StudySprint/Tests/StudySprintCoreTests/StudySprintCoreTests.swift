@@ -594,6 +594,11 @@ final class FigureTests: XCTestCase {
         XCTAssertGreaterThan(inkCoverage(figures[0].1), 0.5, "the red/blue checkerboard is rendered")
     }
 
+    func testTablesAreNotFigures() throws {
+        // A grid of straight lines with text: the text is already in the notes.
+        XCTAssertEqual(try pdfFigures("table.pdf").count, 0)
+    }
+
     func testRegionGrouping() {
         let page = CGRect(x: 0, y: 0, width: 612, height: 792)
         let marks = [

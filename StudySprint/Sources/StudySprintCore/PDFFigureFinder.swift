@@ -10,12 +10,16 @@ public enum PDFFigureFinder {
     struct Mark {
         var rect: CGRect
         var isImage: Bool
+        /// Drawn only with horizontal/vertical lines and rectangles (table grids, boxes, rules).
+        var boxy = false
     }
 
     struct Region {
         var rect: CGRect
         var images = 0
         var shapes = 0
+        /// Shapes with curves or slanted lines: arrows, circles, plotted lines.
+        var drawn = 0
     }
 
     /// Rendered figures from the PDF, top to bottom on each page.
@@ -53,7 +57,10 @@ public enum PDFFigureFinder {
             return true
         }
 
-        var regions = useful.map { Region(rect: $0.rect, images: $0.isImage ? 1 : 0, shapes: $0.isImage ? 0 : 1) }
+        var regions = useful.map {
+            Region(rect: $0.rect, images: $0.isImage ? 1 : 0, shapes: $0.isImage ? 0 : 1,
+                   drawn: !$0.isImage && !$0.boxy ? 1 : 0)
+        }
         // Merge anything within `gap` points of each other until nothing changes.
         let gap: CGFloat = 14
         var merged = true
@@ -65,6 +72,7 @@ public enum PDFFigureFinder {
                         regions[i].rect = regions[i].rect.union(regions[j].rect)
                         regions[i].images += regions[j].images
                         regions[i].shapes += regions[j].shapes
+                        regions[i].drawn += regions[j].drawn
                         regions.remove(at: j)
                         merged = true
                         break outer
@@ -77,8 +85,10 @@ public enum PDFFigureFinder {
             .filter { r in
                 let w = r.rect.width, h = r.rect.height
                 if r.images > 0 { return w >= 50 && h >= 50 }
-                // Drawn diagrams: several shapes, a real size, not the whole page.
-                return r.shapes >= 4 && w >= 100 && h >= 60 && w * h < 0.9 * pageArea
+                // Drawn diagrams: several shapes including some curves or slanted lines (arrows),
+                // a real size, not the whole page. Grids of straight lines are tables, whose text
+                // is already in the notes.
+                return r.shapes >= 4 && r.drawn >= 1 && w >= 100 && h >= 60 && w * h < 0.9 * pageArea
             }
             .map { $0.rect.insetBy(dx: -8, dy: -8).intersection(page) }
             .filter { !$0.isNull && $0.width > 0 && $0.height > 0 }
@@ -108,11 +118,31 @@ public enum PDFFigureFinder {
         var minX = CGFloat.infinity, minY = CGFloat.infinity, maxX = -CGFloat.infinity, maxY = -CGFloat.infinity
         var marks: [Mark] = []
         var depth = 0
+        var last: CGPoint?
+        var slanted = false
         var table: CGPDFOperatorTableRef?
 
         var current: CGAffineTransform {
             get { ctm[ctm.count - 1] }
             set { ctm[ctm.count - 1] = newValue }
+        }
+
+        func move(_ x: CGFloat, _ y: CGFloat) {
+            add(x, y)
+            last = CGPoint(x: x, y: y).applying(current)
+        }
+
+        func line(_ x: CGFloat, _ y: CGFloat) {
+            let p = CGPoint(x: x, y: y).applying(current)
+            if let last, abs(p.x - last.x) > 0.5 && abs(p.y - last.y) > 0.5 { slanted = true }
+            add(x, y)
+            last = p
+        }
+
+        func curve(_ points: [CGFloat]) {
+            slanted = true
+            for i in stride(from: 0, to: points.count - 1, by: 2) { add(points[i], points[i + 1]) }
+            last = CGPoint(x: points[points.count - 2], y: points[points.count - 1]).applying(current)
         }
 
         func add(_ x: CGFloat, _ y: CGFloat) {
@@ -123,9 +153,12 @@ public enum PDFFigureFinder {
 
         func endPath(paint: Bool) {
             if paint && minX <= maxX {
-                marks.append(Mark(rect: CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY), isImage: false))
+                marks.append(Mark(rect: CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY),
+                                  isImage: false, boxy: !slanted))
             }
             minX = .infinity; minY = .infinity; maxX = -.infinity; maxY = -.infinity
+            slanted = false
+            last = nil
         }
 
         func addImage() {
@@ -180,20 +213,22 @@ public enum PDFFigureFinder {
         }
 
         // Path construction
-        for op in ["m", "l"] {
-            CGPDFOperatorTableSetCallback(table, op) { scanner, info in
-                guard let s = PDFFigureFinder.state(info), let n = PDFFigureFinder.numbers(scanner, 2) else { return }
-                s.add(n[0], n[1])
-            }
+        CGPDFOperatorTableSetCallback(table, "m") { scanner, info in
+            guard let s = PDFFigureFinder.state(info), let n = PDFFigureFinder.numbers(scanner, 2) else { return }
+            s.move(n[0], n[1])
+        }
+        CGPDFOperatorTableSetCallback(table, "l") { scanner, info in
+            guard let s = PDFFigureFinder.state(info), let n = PDFFigureFinder.numbers(scanner, 2) else { return }
+            s.line(n[0], n[1])
         }
         CGPDFOperatorTableSetCallback(table, "c") { scanner, info in
             guard let s = PDFFigureFinder.state(info), let n = PDFFigureFinder.numbers(scanner, 6) else { return }
-            s.add(n[0], n[1]); s.add(n[2], n[3]); s.add(n[4], n[5])
+            s.curve(n)
         }
         for op in ["v", "y"] {
             CGPDFOperatorTableSetCallback(table, op) { scanner, info in
                 guard let s = PDFFigureFinder.state(info), let n = PDFFigureFinder.numbers(scanner, 4) else { return }
-                s.add(n[0], n[1]); s.add(n[2], n[3])
+                s.curve(n)
             }
         }
         CGPDFOperatorTableSetCallback(table, "re") { scanner, info in
