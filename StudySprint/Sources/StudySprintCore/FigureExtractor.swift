@@ -51,68 +51,11 @@ public enum FigureExtractor {
         }.joined(separator: "\n")
     }
 
-    // MARK: PDF (raster images embedded in the pages)
+    // MARK: PDF
 
+    /// Pictures and drawn diagrams on the pages, rendered as they appear (see PDFFigureFinder).
     public static func pdfImages(_ data: Data, name: String, limit: Int = maxFigures) -> [NoteAttachment] {
-        guard let provider = CGDataProvider(data: data as CFData), let doc = CGPDFDocument(provider) else { return [] }
-        var out: [NoteAttachment] = []
-        var seen = Set<String>()
-        for pageNumber in 1...max(doc.numberOfPages, 1) where out.count < limit {
-            guard let page = doc.page(at: pageNumber), let pageDict = page.dictionary else { continue }
-            var resources: CGPDFDictionaryRef?
-            var xobjects: CGPDFDictionaryRef?
-            guard CGPDFDictionaryGetDictionary(pageDict, "Resources", &resources), let resources,
-                  CGPDFDictionaryGetDictionary(resources, "XObject", &xobjects), let xobjects else { continue }
-
-            var streams: [CGPDFStreamRef] = []
-            CGPDFDictionaryApplyBlock(xobjects, { _, object, _ in
-                var stream: CGPDFStreamRef?
-                if CGPDFObjectGetValue(object, .stream, &stream), let stream { streams.append(stream) }
-                return true
-            }, nil)
-
-            for stream in streams where out.count < limit {
-                guard let image = image(from: stream), let jpeg = jpegData(image) else { continue }
-                guard seen.insert(digest(jpeg)).inserted else { continue }
-                out.append(NoteAttachment(kind: .image, role: .figure,
-                                          name: "\(name) · page \(pageNumber) picture",
-                                          mediaType: "image/jpeg", data: jpeg))
-            }
-        }
-        return out
-    }
-
-    private static func image(from stream: CGPDFStreamRef) -> CGImage? {
-        guard let dict = CGPDFStreamGetDictionary(stream) else { return nil }
-        var subtype: UnsafePointer<Int8>?
-        guard CGPDFDictionaryGetName(dict, "Subtype", &subtype), let subtype, String(cString: subtype) == "Image" else { return nil }
-        var width: CGPDFInteger = 0, height: CGPDFInteger = 0, bpc: CGPDFInteger = 8
-        CGPDFDictionaryGetInteger(dict, "Width", &width)
-        CGPDFDictionaryGetInteger(dict, "Height", &height)
-        CGPDFDictionaryGetInteger(dict, "BitsPerComponent", &bpc)
-        guard width >= minSide, height >= minSide else { return nil }
-
-        var format = CGPDFDataFormat.raw
-        guard let cfData = CGPDFStreamCopyData(stream, &format) else { return nil }
-        let data = cfData as Data
-        switch format {
-        case .jpegEncoded, .JPEG2000:
-            return cgImage(from: data)
-        case .raw:
-            // Uncompressed pixels: only plain 8-bit RGB or grayscale is rebuilt.
-            var colorSpaceName: UnsafePointer<Int8>?
-            CGPDFDictionaryGetName(dict, "ColorSpace", &colorSpaceName)
-            let name = colorSpaceName.map { String(cString: $0) } ?? ""
-            let components = name == "DeviceGray" ? 1 : name == "DeviceRGB" ? 3 : 0
-            guard bpc == 8, components > 0, data.count >= width * height * components,
-                  let provider = CGDataProvider(data: data as CFData) else { return nil }
-            let space = components == 1 ? CGColorSpaceCreateDeviceGray() : CGColorSpaceCreateDeviceRGB()
-            return CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 8 * components,
-                           bytesPerRow: width * components, space: space, bitmapInfo: CGBitmapInfo(rawValue: 0),
-                           provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
-        @unknown default:
-            return nil
-        }
+        PDFFigureFinder.figures(in: data, name: name, limit: limit)
     }
 
     // MARK: Image helpers

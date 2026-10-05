@@ -75,10 +75,8 @@ private struct NewGuideContent: View {
     private var notesEditor: some View {
         VStack(alignment: .leading, spacing: 8) {
             ZStack(alignment: .topLeading) {
-                TextEditor(text: $notes)
-                    .font(.body)
-                    .scrollContentBackground(.hidden)
-                    .padding(10)
+                NotesTextEditor(text: $notes, onPictures: addPictures, onFiles: { $0.forEach(importFile) })
+                    .padding(4)
                 if notes.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Paste lecture notes, a syllabus, a textbook chapter, or just a topic…")
@@ -222,11 +220,22 @@ private struct NewGuideContent: View {
     }
 
     private func pasteImage() {
-        guard let image = NSImage(pasteboard: .general) else {
-            importError = "There's no image on the clipboard. Copy a photo or screenshot of your notes first."
+        let pictures = NotesImporter.pictures(from: .general)
+        guard !pictures.isEmpty else {
+            importError = "There's no picture on the clipboard. Copy a picture, a screenshot, or text with pictures first."
             return
         }
-        addImage(image, name: "Pasted image \(attachments.count + 1)")
+        addPictures(pictures)
+    }
+
+    /// Pictures that arrived with pasted or dropped content.
+    private func addPictures(_ pictures: [NoteAttachment]) {
+        let room = max(0, Self.maxFigures - attachments.filter(\.isFigure).count)
+        let accepted = pictures.prefix(room)
+        withAnimation { attachments += accepted }
+        if accepted.count < pictures.count {
+            importError = "Only the first \(Self.maxFigures) pictures are used in one guide."
+        }
     }
 
     private func addImage(_ image: NSImage, name: String) {

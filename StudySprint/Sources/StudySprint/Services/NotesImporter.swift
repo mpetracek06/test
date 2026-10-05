@@ -60,6 +60,28 @@ enum NotesImporter {
         return [.text(try String(contentsOf: url, encoding: .utf8))]
     }
 
+    /// Pictures on the clipboard: images copied on their own, pictures inside copied rich text
+    /// (Word, Pages, Notes, TextEdit), and pictures or diagrams inside copied PDF content.
+    static func pictures(from pb: NSPasteboard) -> [NoteAttachment] {
+        var found: [NoteAttachment] = []
+        if let data = pb.data(forType: .rtfd), let text = NSAttributedString(rtfd: data, documentAttributes: nil) {
+            found += embeddedImages(in: text, name: "Pasted")
+        } else if let data = pb.data(forType: .rtf), let text = NSAttributedString(rtf: data, documentAttributes: nil) {
+            found += embeddedImages(in: text, name: "Pasted")
+        }
+        if found.isEmpty, let data = pb.data(forType: .pdf) {
+            found += FigureExtractor.pdfImages(data, name: "Pasted PDF")
+        }
+        // A copied picture on its own (screenshot, Preview selection, Photos). When text came along,
+        // any image on the clipboard is usually just a snapshot of that text, so it's ignored.
+        if found.isEmpty, pb.string(forType: .string)?.isEmpty != false,
+           NSImage.canInit(with: pb), let image = NSImage(pasteboard: pb),
+           let attachment = attachment(from: image, name: "Pasted picture") {
+            found.append(attachment)
+        }
+        return found
+    }
+
     /// Pictures embedded in rich text (RTFD, HTML, Word 97).
     static func embeddedImages(in text: NSAttributedString, name: String) -> [NoteAttachment] {
         var out: [NoteAttachment] = []

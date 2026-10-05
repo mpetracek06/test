@@ -1,3 +1,4 @@
+import CoreGraphics
 import XCTest
 @testable import StudySprintCore
 
@@ -550,14 +551,60 @@ final class FigureTests: XCTestCase {
         XCTAssertEqual(text, "Slide 1: Osmosis & water moves to high solute\nSlide 2: Second slide: diffusion\nSlide 3: Tenth")
     }
 
-    func testExtractsPicturesEmbeddedInPDF() throws {
-        let data = try Data(contentsOf: try fixture("lecture.pdf"))
-        let figures = FigureExtractor.pdfImages(data, name: "lecture.pdf")
+    /// Fraction of pixels that aren't (near) white: proves the render shows the picture.
+    private func inkCoverage(_ image: CGImage) -> Double {
+        let w = image.width, h = image.height
+        var buf = [UInt8](repeating: 0, count: w * h * 4)
+        let ctx = CGContext(data: &buf, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+        var ink = 0
+        for i in stride(from: 0, to: buf.count, by: 4) where buf[i] < 200 || buf[i + 1] < 200 || buf[i + 2] < 200 { ink += 1 }
+        return Double(ink) / Double(w * h)
+    }
+
+    private func pdfFigures(_ name: String) throws -> [(NoteAttachment, CGImage)] {
+        let data = try Data(contentsOf: try fixture(name))
+        return try FigureExtractor.pdfImages(data, name: name).map { ($0, try XCTUnwrap(FigureExtractor.cgImage(from: $0.data))) }
+    }
+
+    func testFindsPictureEmbeddedInPDF() throws {
+        let figures = try pdfFigures("lecture.pdf")
         XCTAssertEqual(figures.count, 1)
-        let image = try XCTUnwrap(FigureExtractor.cgImage(from: figures[0].data))
-        XCTAssertEqual(image.width, 200)
-        XCTAssertEqual(image.height, 150)
-        XCTAssertEqual(figures[0].name, "lecture.pdf · page 1 picture")
+        XCTAssertEqual(figures[0].0.name, "lecture.pdf · page 1 figure")
+        // 200×150 pt picture plus padding, rendered at high resolution.
+        XCTAssertEqual(Double(figures[0].1.width) / Double(figures[0].1.height), 216.0 / 166.0, accuracy: 0.03)
+        XCTAssertGreaterThan(figures[0].1.width, 600)
+        XCTAssertGreaterThan(inkCoverage(figures[0].1), 0.05)
+    }
+
+    func testFindsDiagramDrawnWithShapes() throws {
+        // Page also has a full-page background, a title underline and a lone callout box: none are figures.
+        let figures = try pdfFigures("vector.pdf")
+        XCTAssertEqual(figures.count, 1)
+        let image = figures[0].1
+        XCTAssertEqual(Double(image.width) / Double(image.height), 376.0 / 176.0, accuracy: 0.05)
+        XCTAssertGreaterThan(inkCoverage(image), 0.01)
+    }
+
+    func testFindsIndexedColorImageInsideGroup() throws {
+        let figures = try pdfFigures("form-indexed.pdf")
+        XCTAssertEqual(figures.count, 1)
+        XCTAssertEqual(Double(figures[0].1.width) / Double(figures[0].1.height), 176.0 / 136.0, accuracy: 0.03)
+        XCTAssertGreaterThan(inkCoverage(figures[0].1), 0.5, "the red/blue checkerboard is rendered")
+    }
+
+    func testRegionGrouping() {
+        let page = CGRect(x: 0, y: 0, width: 612, height: 792)
+        let marks = [
+            PDFFigureFinder.Mark(rect: page, isImage: false),                                     // background
+            PDFFigureFinder.Mark(rect: CGRect(x: 72, y: 700, width: 300, height: 0.5), isImage: false), // rule
+        ] + (0..<5).map { PDFFigureFinder.Mark(rect: CGRect(x: 100 + $0 * 40, y: 300, width: 30, height: 80), isImage: false) }
+            + [PDFFigureFinder.Mark(rect: CGRect(x: 400, y: 100, width: 120, height: 90), isImage: true)]
+        let regions = PDFFigureFinder.figureRegions(marks: marks, page: page)
+        XCTAssertEqual(regions.count, 2, "the bar chart and the photo; not the background or the rule")
+        XCTAssertEqual(regions[0].minX, 92, accuracy: 0.1)   // bars, top-most first
+        XCTAssertEqual(regions[0].width, 190 + 16, accuracy: 0.1)
     }
 
     func testPromptLabelsFiguresAndAsksForExplanations() {

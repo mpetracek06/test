@@ -1,0 +1,46 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>
+endobj
+4 0 obj
+<<  /Length 563 >>
+stream
+
+1 1 1 rg 0 0 612 792 re f
+0 0 0 rg BT /F1 20 Tf 72 720 Td (Diffusion across a membrane) Tj ET
+0.5 w 72 712 m 400 712 l S
+BT /F1 11 Tf 72 680 Td (Molecules move from high to low concentration until equilibrium.) Tj ET
+0.9 0.9 1 rg 72 600 120 30 re f
+0 0 0 RG 2 w
+120 300 120 160 re S
+360 300 120 160 re S
+240 380 m 360 380 l S
+350 386 m 360 380 l 350 374 l S
+0.2 0.4 0.9 rg 150 400 m 150 411 159 420 170 420 c 181 420 190 411 190 400 c 190 389 181 380 170 380 c 159 380 150 389 150 400 c f
+BT /F1 12 Tf 140 470 Td (High) Tj ET
+BT /F1 12 Tf 390 470 Td (Low) Tj ET
+
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000000856 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+926
+%%EOF
