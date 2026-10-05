@@ -5,8 +5,10 @@ struct PlanView: View {
     @Binding var guide: StudyGuide
     var onStartSprint: () -> Void
     @State private var playing: VideoResource?
+    @State private var screenshotFigure: GuideFigure?
 
     var body: some View {
+        ScrollViewReader { proxy in
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(alignment: .top, spacing: 16) {
@@ -89,8 +91,21 @@ struct PlanView: View {
             .frame(maxWidth: 980)
             .frame(maxWidth: .infinity)
         }
+        .onAppear {
+            // Screenshot states (CI only): scroll to the first figure, or open it full size.
+            guard let first = guide.figures.first else { return }
+            if AppModel.screenshotScreen == "figurecard" {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { proxy.scrollTo(first.id, anchor: .center) }
+            } else if AppModel.screenshotScreen == "figure" {
+                screenshotFigure = first
+            }
+        }
+        }
         .sheet(item: $playing) { video in
             VideoSheet(video: video)
+        }
+        .sheet(item: $screenshotFigure) { figure in
+            FigureViewer(figure: figure, number: 1)
         }
     }
 }
@@ -199,7 +214,7 @@ struct StepCard: View {
                         BulletList(items: step.keyPoints)
                     }
 
-                    ForEach(figures, id: \.figure.id) { FigureCard(figure: $0.figure, number: $0.number) }
+                    ForEach(figures, id: \.figure.id) { FigureCard(figure: $0.figure, number: $0.number).id($0.figure.id) }
 
                     if !step.videos.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
