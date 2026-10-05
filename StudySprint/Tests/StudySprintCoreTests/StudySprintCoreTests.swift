@@ -251,9 +251,11 @@ final class RequestAndCostTests: XCTestCase {
         r.attachments = [NoteAttachment(kind: .image, name: "page1.jpg", mediaType: "image/jpeg", data: Data([1, 2, 3])),
                          NoteAttachment(kind: .pdf, name: "scan.pdf", mediaType: "application/pdf", data: Data([4]))]
         let blocks = Prompts.guideUserContent(r)
-        XCTAssertEqual(blocks.map { $0["type"] as? String }, ["image", "document", "text"])
-        XCTAssertEqual((blocks[0]["source"] as? JSON)?["data"] as? String, "AQID")
-        XCTAssertTrue((blocks[2]["text"] as? String)?.contains("(see attached images)") == true)
+        // Each attachment is introduced by a label, and the instructions come last.
+        XCTAssertEqual(blocks.map { $0["type"] as? String }, ["text", "image", "text", "document", "text"])
+        XCTAssertEqual((blocks[1]["source"] as? JSON)?["data"] as? String, "AQID")
+        XCTAssertEqual(blocks[2]["text"] as? String, "A page of my notes (scan.pdf):")
+        XCTAssertTrue((blocks[4]["text"] as? String)?.contains("(see attached images)") == true)
         XCTAssertFalse(r.isEmpty)
         XCTAssertTrue(GuideRequest(notes: "  \n").isEmpty)
     }
@@ -317,16 +319,16 @@ private struct PassBackend: ChatBackend {
              ]}
             """
         }
+        if props["whatToNotice"] != nil {
+            XCTAssertEqual(messages.last?.images.count, 1, "each picture gets its own pass")
+            return #"{"title": "Light reactions diagram", "explanation": "Shows the thylakoid.", "whatToNotice": ["arrows", "labels"], "stepNumber": 1}"#
+        }
         if props["explanation"] != nil {
             let instruction = messages.last?.content.components(separatedBy: "\n").last ?? ""
             return """
             {"explanation": "Explains \(instruction)", "analogy": "a", "keyPoints": ["k1", "k2"],
              "activeRecall": ["q1", "q2"], "testOut": {"question": "tq", "answer": "ta"}}
             """
-        }
-        if props["whatToNotice"] != nil {
-            XCTAssertEqual(messages.last?.images.count, 1, "each picture gets its own pass")
-            return #"{"title": "Light reactions diagram", "explanation": "Shows the thylakoid.", "whatToNotice": ["arrows", "labels"], "stepNumber": 1}"#
         }
         if props["flashcards"] != nil {
             return """
