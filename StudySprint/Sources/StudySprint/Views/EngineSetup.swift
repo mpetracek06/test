@@ -136,6 +136,12 @@ struct PlanSetupSteps: View {
                 Label("Ready! Guides use your Claude plan — never API credit.", systemImage: "checkmark.seal.fill")
                     .foregroundStyle(.green)
                     .font(.headline)
+                HStack(spacing: 8) {
+                    Button("Log in again") { claudeCode.loginInTerminal() }
+                    Text("If a build says you're not logged in (logins expire now and then).")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
 
             if claudeCode.isReady || showModelPicker {

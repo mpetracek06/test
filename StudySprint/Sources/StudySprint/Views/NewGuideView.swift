@@ -39,7 +39,9 @@ private struct NewGuideContent: View {
                     header
                     if !app.engineReady { EngineSetupCard(ollama: ollama, claudeCode: claudeCode) }
                     if let error = generation.error {
-                        ErrorBanner(message: error) { generation.error = nil }
+                        ErrorBanner(message: error, onDismiss: { generation.error = nil },
+                                    actionTitle: generation.errorNeedsLogin ? "Log in" : nil,
+                                    action: { claudeCode.loginInTerminal() })
                     }
                     if let importError {
                         ErrorBanner(message: importError) { self.importError = nil }
@@ -251,48 +253,62 @@ private struct NewGuideContent: View {
     private var attachmentStrip: some View {
         VStack(alignment: .leading, spacing: 8) {
             let figureCount = attachments.filter(\.isFigure).count
-            Text(figureCount > 0
-                 ? "\(figureCount) picture\(figureCount == 1 ? "" : "s") will be shown in your guide and explained. Right-click a photo of handwritten notes to mark it as a notes page instead."
-                 : "These are read as pages of your notes — handwriting included.")
-                .font(.caption).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            HStack(alignment: .firstTextBaseline) {
+                Text(figureCount > 0
+                     ? "\(figureCount) picture\(figureCount == 1 ? "" : "s") will be shown in your guide and explained. Click ✕ to remove one; right-click a photo of handwritten notes to mark it as a notes page instead."
+                     : "These are read as pages of your notes — handwriting included. Click ✕ to remove one.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer()
+                Button("Remove all", role: .destructive) { withAnimation { attachments.removeAll() } }
+                    .buttonStyle(.borderless)
+                    .font(.caption)
+            }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
                     ForEach(attachments) { a in
-                        ZStack(alignment: .topTrailing) {
-                            VStack(spacing: 4) {
-                                Group {
-                                    if a.kind == .image, let img = NSImage(data: a.data) {
-                                        Image(nsImage: img).resizable().scaledToFill()
-                                    } else {
-                                        Image(systemName: "doc.richtext").font(.system(size: 30)).foregroundStyle(.secondary)
+                        VStack(spacing: 4) {
+                            Group {
+                                if a.kind == .image, let img = NSImage(data: a.data) {
+                                    Image(nsImage: img).resizable().scaledToFill()
+                                } else {
+                                    Image(systemName: "doc.richtext").font(.system(size: 30)).foregroundStyle(.secondary)
+                                }
+                            }
+                            .frame(width: 96, height: 72)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            // A filled picture is bigger than its frame; without this its invisible
+                            // overflow sits on top of the neighbour's ✕ and swallows the click.
+                            .contentShape(RoundedRectangle(cornerRadius: 8))
+                            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.05)))
+                            .overlay(alignment: .topTrailing) {
+                                Button {
+                                    withAnimation { attachments.removeAll { $0.id == a.id } }
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .font(.system(size: 18))
+                                        .foregroundStyle(.white, .black.opacity(0.7))
+                                        .frame(width: 28, height: 28)
+                                        .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .help("Remove this picture")
+                            }
+                            Text(a.name).font(.caption2).lineLimit(1).frame(width: 96)
+                            Text(a.isFigure ? "Picture to explain" : a.kind == .pdf ? "Scanned pages" : "Notes page")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(a.isFigure ? Color.indigo : Color.secondary)
+                        }
+                        .contentShape(Rectangle())
+                        .contextMenu {
+                            if a.kind == .image {
+                                Button(a.isFigure ? "Treat as a page of notes (read, not shown)" : "Treat as a picture to explain") {
+                                    if let i = attachments.firstIndex(where: { $0.id == a.id }) {
+                                        attachments[i].role = a.isFigure ? .page : .figure
                                     }
                                 }
-                                .frame(width: 96, height: 72)
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
-                                .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.05)))
-                                Text(a.name).font(.caption2).lineLimit(1).frame(width: 96)
-                                Text(a.isFigure ? "Picture to explain" : a.kind == .pdf ? "Scanned pages" : "Notes page")
-                                    .font(.caption2.weight(.semibold))
-                                    .foregroundStyle(a.isFigure ? Color.indigo : Color.secondary)
                             }
-                            .contextMenu {
-                                if a.kind == .image {
-                                    Button(a.isFigure ? "Treat as a page of notes (read, not shown)" : "Treat as a picture to explain") {
-                                        if let i = attachments.firstIndex(where: { $0.id == a.id }) {
-                                            attachments[i].role = a.isFigure ? .page : .figure
-                                        }
-                                    }
-                                }
-                                Button("Remove", role: .destructive) { attachments.removeAll { $0.id == a.id } }
-                            }
-                            Button {
-                                withAnimation { attachments.removeAll { $0.id == a.id } }
-                            } label: {
-                                Image(systemName: "xmark.circle.fill").foregroundStyle(.white, .black.opacity(0.6))
-                            }
-                            .buttonStyle(.plain)
-                            .offset(x: 6, y: -6)
+                            Button("Remove", role: .destructive) { attachments.removeAll { $0.id == a.id } }
                         }
                     }
                 }

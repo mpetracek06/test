@@ -117,6 +117,11 @@ private struct StreakFooter: View {
                 .foregroundStyle(.secondary)
                 .help("Cards reviewed today")
             Spacer()
+            OpenSettingsButton()
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderless)
+                .font(.title3)
+                .help("Settings: AI engine, Claude login, reminders (⌘,)")
         }
         .font(.callout.weight(.semibold))
         .padding(.horizontal, 16)

@@ -6,17 +6,23 @@ import Foundation
 
 public enum ClaudeCodeError: LocalizedError, Equatable {
     case notInstalled
-    case notLoggedIn
+    /// Carries what Claude Code said, so the person (and we) can see the real reason.
+    case notLoggedIn(String)
     case wouldBill(String)
     case usageLimit(String)
     case failed(String)
+
+    public var needsLogin: Bool {
+        if case .notLoggedIn = self { return true }
+        return false
+    }
 
     public var errorDescription: String? {
         switch self {
         case .notInstalled:
             return "Claude Code isn't installed. Follow the setup steps in Settings → AI engine."
-        case .notLoggedIn:
-            return "Claude Code isn't logged in to your Claude account. Click “Log in” in Settings → AI engine."
+        case .notLoggedIn(let message):
+            return "Claude Code couldn't use your Claude account, so you need to log in again (this happens when a login expires). Click “Log in” and choose your Claude account in the browser, then build again. Claude Code said: \(message)"
         case .wouldBill(let source):
             return "Stopped: Claude Code is set up to bill an API key (\(source)) instead of your Claude plan. Log in with your Claude account (Settings → AI engine) and remove ANTHROPIC_API_KEY from your shell."
         case .usageLimit(let message):
@@ -273,9 +279,10 @@ public struct ClaudeCodeRunner {
 
     static func classify(_ message: String) -> ClaudeCodeError {
         let m = message.lowercased()
+        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
         if m.contains("not logged in") || m.contains("/login") || m.contains("invalid api key")
-            || m.contains("authentication") || m.contains("oauth") {
-            return .notLoggedIn
+            || m.contains("authentication_error") || m.contains("oauth token") || m.contains("api error: 401") {
+            return .notLoggedIn(String(trimmed.prefix(300)))
         }
         if m.contains("usage limit") || m.contains("rate limit") || m.contains("limit reached") {
             return .usageLimit(message.trimmingCharacters(in: .whitespacesAndNewlines))

@@ -485,7 +485,9 @@ final class ClaudeCodeTests: XCTestCase {
         _ = parser.handle(#"{"type":"result","subtype":"success","is_error":true,"result":"Claude AI usage limit reached|1793865600"}"#)
         XCTAssertTrue(parser.isError)
         XCTAssertEqual(ClaudeCodeRunner.classify(parser.errorMessage ?? ""), .usageLimit("Claude AI usage limit reached|1793865600"))
-        XCTAssertEqual(ClaudeCodeRunner.classify("Invalid API key · Please run /login"), .notLoggedIn)
+        XCTAssertEqual(ClaudeCodeRunner.classify("Invalid API key · Please run /login"), .notLoggedIn("Invalid API key · Please run /login"))
+        XCTAssertTrue(ClaudeCodeRunner.classify("API Error: 401 {\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"OAuth token has expired.\"}}").needsLogin)
+        XCTAssertFalse(ClaudeCodeRunner.classify("Could not process image").needsLogin)
     }
 
     func testEnvironmentNeverBillsAnAPIKey() {

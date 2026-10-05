@@ -166,11 +166,20 @@ struct EmptyStateView: View {
 struct ErrorBanner: View {
     let message: String
     var onDismiss: (() -> Void)? = nil
+    /// Optional fix-it button, e.g. "Log in".
+    var actionTitle: String? = nil
+    var action: (() -> Void)? = nil
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-            Text(message).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 8) {
+                Text(message).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                if let actionTitle, let action {
+                    Button(actionTitle, action: action)
+                        .buttonStyle(.borderedProminent).tint(.indigo)
+                }
+            }
             Spacer()
             if let onDismiss {
                 Button(action: onDismiss) { Image(systemName: "xmark") }.buttonStyle(.borderless)
@@ -224,4 +233,21 @@ extension StepStatus {
 func elapsedString(since date: Date, now: Date = Date()) -> String {
     let s = max(0, Int(now.timeIntervalSince(date)))
     return String(format: "%d:%02d", s / 60, s % 60)
+}
+
+/// Opens the Settings window (also in the StudySprint menu → Settings…, ⌘,).
+struct OpenSettingsButton: View {
+    var title = "Settings"
+
+    var body: some View {
+        if #available(macOS 14.0, *) {
+            SettingsLink { Label(title, systemImage: "gearshape") }
+        } else {
+            Button {
+                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+            } label: {
+                Label(title, systemImage: "gearshape")
+            }
+        }
+    }
 }

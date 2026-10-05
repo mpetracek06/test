@@ -343,6 +343,8 @@ final class GenerationController: ObservableObject {
     @Published private(set) var characters = 0
     @Published private(set) var startedAt = Date()
     @Published var error: String?
+    /// The last error was Claude Code's login: the banner offers a "Log in" button.
+    @Published var errorNeedsLogin = false
 
     weak var app: AppModel?
     private var task: Task<Void, Never>?
@@ -353,6 +355,7 @@ final class GenerationController: ObservableObject {
         guard !isRunning, let app else { return }
         isRunning = true
         error = nil
+        errorNeedsLogin = false
         items = []
         sources = []
         searches = 0
@@ -383,6 +386,10 @@ final class GenerationController: ObservableObject {
                 self?.error = nil
             } catch {
                 self?.error = error.localizedDescription
+                if (error as? ClaudeCodeError)?.needsLogin == true {
+                    self?.errorNeedsLogin = true
+                    if let manager = self?.app?.claudeCode { Task { await manager.refresh() } }
+                }
             }
             self?.isRunning = false
         }
